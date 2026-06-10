@@ -1,0 +1,26 @@
+{
+  "_note": "Synthetic Fabric IQ semantic-layer seed. Models the entities and rules ASCENT reasons over.",
+  "roles": {
+    "Cloud Engineer":    { "primary_cert": "AZ-204", "secondary_cert": "AZ-305" },
+    "DevOps Engineer":   { "primary_cert": "AZ-400", "secondary_cert": null },
+    "Data Engineer":     { "primary_cert": "DP-203", "secondary_cert": null },
+    "Security Engineer": { "primary_cert": "SC-200", "secondary_cert": null }
+  },
+  "certifications": [
+    { "id": "AZ-204", "title": "Developing Solutions for Azure", "skills": ["API Development", "Azure Functions", "Storage"], "recommended_hours": 20, "prerequisites": [], "advancement": "AZ-305" },
+    { "id": "AZ-305", "title": "Azure Solutions Architect",      "skills": ["Architecture", "Governance", "Networking"],   "recommended_hours": 30, "prerequisites": ["AZ-204"], "advancement": null },
+    { "id": "AZ-400", "title": "DevOps Engineer Expert",         "skills": ["CI/CD", "Monitoring", "GitHub Actions"],      "recommended_hours": 25, "prerequisites": [], "advancement": null },
+    { "id": "DP-203", "title": "Data Engineering on Azure",      "skills": ["Data Pipelines", "Storage", "Stream Processing"], "recommended_hours": 22, "prerequisites": [], "advancement": null },
+    { "id": "SC-200", "title": "Security Operations Analyst",    "skills": ["Threat Detection", "Sentinel", "Defender"],   "recommended_hours": 20, "prerequisites": [], "advancement": null }
+  ],
+  "rules": {
+    "pass_threshold_practice_score": 75,
+    "min_recommended_hours_ratio": 0.9,
+    "readiness_formula": "ready = practice_score_avg >= pass_threshold AND hours_studied >= recommended_hours * min_recommended_hours_ratio",
+    "risk_flags": {
+      "capacity_constrained": "meeting_hours_per_week > 20",
+      "under_studied": "hours_studied < recommended_hours * 0.7",
+      "low_practice": "practice_score_avg < pass_threshold"
+    }
+  }
+}

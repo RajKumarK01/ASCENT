@@ -1,0 +1,16 @@
+# Core agent framework + Foundry
+agent-framework
+azure-ai-projects>=2.1.0
+azure-identity
+
+# Foundry IQ / knowledge base retrieval
+azure-search-documents
+
+# Hosted Agent protocol (Responses) — enable when deploying
+# azure-ai-agentserver-responses
+
+# Telemetry
+azure-monitor-opentelemetry
+
+# Utilities
+python-dotenv

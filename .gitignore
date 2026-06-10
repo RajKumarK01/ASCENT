@@ -1,0 +1,35 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Secrets / config
+.env
+*.env
+!.env.example
+
+# Azure
+.azure/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Build artifacts
+*.log
+dist/
+build/
+
+# Frontend
+ui/node_modules/
+ui/dist/
+
+# Claude Code local settings (project-level overrides, not shared)
+.claude/settings.local.json
+
+# Claude Code meta-files (project instructions and build guides for Claude)
+CLAUDE.md
+BUILD_STEPS/
+UI_BUILD_PLAN.md
