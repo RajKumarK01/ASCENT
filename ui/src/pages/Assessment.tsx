@@ -3,6 +3,7 @@ import { api } from '../api'
 import { Card } from '../components/Card'
 import { Badge } from '../components/Badge'
 import { CitationChip } from '../components/CitationChip'
+import { LoadingScreen } from '../components/LoadingScreen'
 
 export function Assessment() {
   const [data, setData] = useState<any>(null)
@@ -10,7 +11,7 @@ export function Assessment() {
 
   useEffect(() => { api.assessment().then(setData).finally(() => setLoading(false)) }, [])
 
-  if (loading) return <div className="p-8 text-slate-400">Loading assessment…</div>
+  if (loading) return <LoadingScreen />
   if (!data) return null
 
   const r = data.readiness ?? {}

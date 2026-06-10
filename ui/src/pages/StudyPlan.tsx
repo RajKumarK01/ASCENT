@@ -3,6 +3,7 @@ import { api } from '../api'
 import { Card } from '../components/Card'
 import { Badge } from '../components/Badge'
 import { CitationChip } from '../components/CitationChip'
+import { LoadingScreen } from '../components/LoadingScreen'
 
 export function StudyPlan() {
   const [data, setData] = useState<any>(null)
@@ -22,7 +23,7 @@ export function StudyPlan() {
     <div className="p-6 space-y-5 max-w-3xl">
       <h1 className="text-2xl font-bold text-slate-800">Study Plan</h1>
 
-      {loading && <div className="text-slate-400">Loading…</div>}
+      {loading && <LoadingScreen />}
       {!loading && plan && (
         <>
           <Card>

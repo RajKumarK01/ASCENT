@@ -82,10 +82,14 @@ export function ChatPanel() {
               : 'bg-slate-50 border border-slate-100 rounded-2xl rounded-tl-sm px-4 py-3'}`}>
 
               {msg.loading ? (
-                <div className="flex gap-1 items-center py-1">
-                  {[0,1,2].map(i => (
-                    <div key={i} className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: `${i*0.15}s` }} />
-                  ))}
+                <div className="space-y-2 py-1">
+                  <div className="flex gap-1 items-center">
+                    {[0,1,2].map(i => (
+                      <div key={i} className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: `${i*0.15}s` }} />
+                    ))}
+                    <span className="text-xs text-slate-400 ml-2">AI agents working…</span>
+                  </div>
+                  <div className="text-xs text-slate-400 italic">Querying Foundry IQ · GPT-4.1</div>
                 </div>
               ) : (
                 <>

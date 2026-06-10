@@ -5,6 +5,7 @@ import { Badge } from '../components/Badge'
 import { ProgressRing } from '../components/ProgressRing'
 import { TraceTimeline } from '../components/TraceTimeline'
 import { ChatPanel } from '../components/ChatPanel'
+import { LoadingScreen } from '../components/LoadingScreen'
 
 export function EmployeeDashboard() {
   const [data, setData] = useState<any>(null)
@@ -15,7 +16,7 @@ export function EmployeeDashboard() {
     api.plan().then(setData).catch(e => setErr(e.message)).finally(() => setLoading(false))
   }, [])
 
-  if (loading) return <div className="p-8 text-slate-400">Loading your learning plan…</div>
+  if (loading) return <LoadingScreen />
   if (err) return <div className="p-8 text-red-600">{err}</div>
   if (!data) return null
 
