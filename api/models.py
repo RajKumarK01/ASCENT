@@ -27,3 +27,7 @@ class ChatRequest(BaseModel):
 class ProfileUpdateRequest(BaseModel):
     path: str
     certification: str | None = None
+
+
+class PathInterpretRequest(BaseModel):
+    description: str

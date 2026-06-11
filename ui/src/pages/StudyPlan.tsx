@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { api } from '../api'
+import { usePlan } from '../context/PlanContext'
 import { Card } from '../components/Card'
 import { Badge } from '../components/Badge'
 import { CitationChip } from '../components/CitationChip'
@@ -31,32 +32,14 @@ function buildVideo(skill: string, certification: string) {
 }
 
 export function StudyPlan() {
-  const [data, setData] = useState<any>(null)
-  const [weeks, setWeeks] = useState(4)
-  const [loading, setLoading] = useState(true)
+  const { data, loading, error, weeks, setWeeks, refresh } = usePlan()
   const [completing, setCompleting] = useState<string | null>(null)
-  const [error, setError] = useState('')
-
-  async function load(w: number) {
-    setLoading(true)
-    setError('')
-    try {
-      const planData = await api.plan(w)
-      setData(planData)
-    } catch (ex: any) {
-      setError(ex.message ?? 'Unable to load study plan')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => { load(weeks) }, [weeks])
 
   async function handleCompleteModule(moduleId: string) {
     setCompleting(moduleId)
     try {
       await api.completeModule(moduleId)
-      await load(weeks)
+      await refresh()
     } finally {
       setCompleting(null)
     }

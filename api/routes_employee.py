@@ -7,7 +7,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, Query
 
 from .deps import current_user, require_role
-from .models import RegenerateRequest, ChatRequest, ProfileUpdateRequest
+from .models import RegenerateRequest, ChatRequest, ProfileUpdateRequest, PathInterpretRequest
 from .agent_client import run_for_learner
 
 router = APIRouter(prefix="/api", tags=["employee"])
@@ -357,6 +357,88 @@ def update_employee_profile(body: ProfileUpdateRequest, user: dict = Depends(_em
 @router.post("/employee/study/module/{module_id}/complete")
 def complete_study_module(module_id: str, user: dict = Depends(_employee)):
     return _complete_module(user, module_id)
+
+
+@router.post("/employee/path/interpret")
+def interpret_path(body: PathInterpretRequest, user: dict = Depends(_employee)):
+    """Interpret a free-text learning goal and suggest a certification path."""
+    seed = _load_semantic_seed()
+    certs = seed.get("certifications", [])
+    cert_list = "\n".join(
+        f"- {c['id']}: {c['title']} (skills: {', '.join(c['skills'])})" for c in certs
+    )
+
+    from src.config import MODE, MODEL_DEPLOYMENT
+    suggestion = _llm_interpret_path(body.description, cert_list, MODE, MODEL_DEPLOYMENT)
+
+    # Validate suggested cert exists
+    valid_ids = {c["id"] for c in certs}
+    if suggestion.get("certification") not in valid_ids:
+        # Fallback: keyword match
+        desc_lower = body.description.lower()
+        for c in certs:
+            if c["id"].lower() in desc_lower or c["title"].lower() in desc_lower:
+                suggestion["certification"] = c["id"]
+                suggestion["reasoning"] = f"Matched '{c['id']}' from your description."
+                break
+        else:
+            suggestion["certification"] = certs[0]["id"]
+            suggestion["reasoning"] = "Defaulted to primary certification — please adjust if needed."
+
+    cert_info = next((c for c in certs if c["id"] == suggestion["certification"]), {})
+    return {
+        "certification": suggestion["certification"],
+        "cert_title": cert_info.get("title", ""),
+        "path": suggestion.get("path", "custom"),
+        "reasoning": suggestion.get("reasoning", ""),
+        "skills": cert_info.get("skills", []),
+        "recommended_hours": cert_info.get("recommended_hours", 20),
+        "available_certifications": [c["id"] for c in certs],
+    }
+
+
+def _llm_interpret_path(description: str, cert_list: str, mode: str, model: str) -> dict:
+    if mode == "foundry":
+        try:
+            import json as _json
+            from src.agents._foundry import get_openai_client
+            client = get_openai_client()
+            resp = client.chat.completions.create(
+                model=model,
+                messages=[{
+                    "role": "system",
+                    "content": (
+                        "You are a learning path advisor. Given a learner's goal description, "
+                        "identify the best Azure certification from the list provided. "
+                        "Return JSON: {\"certification\": \"<ID>\", \"path\": \"custom\", \"reasoning\": \"<1 sentence>\"}"
+                    )
+                }, {
+                    "role": "user",
+                    "content": f"Available certifications:\n{cert_list}\n\nLearner goal: {description}"
+                }],
+                response_format={"type": "json_object"},
+                max_tokens=150,
+            )
+            return _json.loads(resp.choices[0].message.content)
+        except Exception:
+            pass
+
+    # Local fallback: simple keyword matching
+    desc_lower = description.lower()
+    keyword_map = {
+        "AZ-204": ["developer", "api", "function", "app service", "develop", "code", "backend"],
+        "AZ-305": ["architect", "architecture", "design", "solution", "enterprise"],
+        "AZ-400": ["devops", "ci/cd", "pipeline", "github", "deployment", "automation"],
+        "DP-203": ["data", "pipeline", "analytics", "synapse", "stream", "etl"],
+        "SC-200": ["security", "sentinel", "defender", "threat", "soc", "incident"],
+    }
+    scores = {cid: sum(1 for kw in kws if kw in desc_lower) for cid, kws in keyword_map.items()}
+    best = max(scores, key=scores.get)
+    return {
+        "certification": best if scores[best] > 0 else "AZ-204",
+        "path": "custom",
+        "reasoning": f"Based on your description, {best} aligns best with your stated goals.",
+    }
 
 
 @router.post("/chat")

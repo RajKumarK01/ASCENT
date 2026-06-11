@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { api } from '../api'
+import { usePlan } from '../context/PlanContext'
 import { Card } from '../components/Card'
 import { Badge } from '../components/Badge'
 import { ChatPanel } from '../components/ChatPanel'
@@ -48,59 +49,20 @@ function calculateStreaks(data: ContributionData) {
 }
 
 export function EmployeeDashboard() {
-  const [data, setData] = useState<any>(null)
-  const [err, setErr] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [contributions, setContributions] = useState<ContributionData>({})
-  const [contribLoading, setContribLoading] = useState(false)
+  const { data, contributions, loading, error: err, refresh: loadDashboard } = usePlan()
+  const contribLoading = false
   const [showPathModal, setShowPathModal] = useState(false)
-  const [selectedPath, setSelectedPath] = useState('recommended')
-  const [selectedCertification, setSelectedCertification] = useState('')
+  const [selectedPath, setSelectedPath] = useState(data?.profile?.selected_path ?? 'recommended')
+  const [selectedCertification, setSelectedCertification] = useState(data?.profile?.active_certification ?? '')
   const [pathLoading, setPathLoading] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
 
-  async function loadDashboard() {
-    setLoading(true)
-    setErr('')
-
-    try {
-      setContribLoading(true)
-      const [planData, contributionData] = await Promise.race([
-        Promise.all([api.plan(), api.contributions()]),
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 90000)),
-      ]) as [any, ContributionData]
-
-      setData(planData)
-      setContributions(contributionData)
-      setShowPathModal(Boolean((planData as any)?.profile?.needs_selection))
-    } catch (ex: any) {
-      setErr(ex.message === 'timeout' ? 'Unable to load recommendations. Retry.' : ex.message ?? 'Unable to load dashboard')
-    } finally {
-      setLoading(false)
-      setContribLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    loadDashboard()
-  }, [])
-
-  useEffect(() => {
-    if (data?.profile) {
-      setSelectedPath(data.profile.selected_path ?? 'recommended')
-      setSelectedCertification(data.profile.active_certification ?? '')
-    }
-  }, [data])
-
   async function handlePathConfirm(path: string, certification: string) {
     setPathLoading(true)
-    setErr('')
     try {
       await api.updateProfile({ path, certification })
       await loadDashboard()
       setShowPathModal(false)
-    } catch (ex: any) {
-      setErr(ex.message ?? 'Unable to save journey selection')
     } finally {
       setPathLoading(false)
     }
@@ -119,17 +81,6 @@ export function EmployeeDashboard() {
   function confirmDeletePath() {
     setDeleteConfirm(false)
     setShowPathModal(true)
-    setData((prev: any) => prev ? {
-      ...prev,
-      profile: {
-        ...prev.profile,
-        needs_selection: true,
-        modules: [],
-        certification_chain: [],
-        active_certification: '',
-        path_title: 'Choose a learning journey to continue',
-      },
-    } : prev)
   }
 
   const profile = data?.profile ?? {}
@@ -171,7 +122,7 @@ export function EmployeeDashboard() {
       <div className="p-8 max-w-3xl mx-auto space-y-4 rounded-3xl border border-github-border bg-github-surface">
         <div className="text-lg font-semibold text-github-text">Unable to load your dashboard</div>
         <div className="text-sm text-github-red">{err}</div>
-        <button type="button" onClick={loadDashboard} className="rounded-2xl bg-github-blue px-4 py-3 text-sm font-semibold text-github-bg hover:bg-github-blue/80">
+        <button type="button" onClick={() => loadDashboard()} className="rounded-2xl bg-github-blue px-4 py-3 text-sm font-semibold text-github-bg hover:bg-github-blue/80">
           Retry
         </button>
       </div>
