@@ -10,9 +10,17 @@ from ..iq import foundry_iq, fabric_iq
 from ..config import MODE, MODEL_DEPLOYMENT
 
 SYSTEM_PROMPT = """You are the Assessment Agent for an enterprise certification programme.
-Generate one realistic practice exam question testing the given skill in the context of
-the certification. Use the provided knowledge base context to inform difficulty and framing.
-Respond with JSON only: {"question": "...", "hint": "..."}"""
+Generate one realistic multiple-choice practice exam question testing the given skill.
+Use the provided knowledge base context for accuracy and difficulty.
+Respond with JSON only:
+{
+  "question": "...",
+  "choices": ["correct answer", "plausible wrong answer 1", "plausible wrong answer 2", "plausible wrong answer 3"],
+  "correct_index": 0,
+  "hint": "...",
+  "explanation": "one sentence why the correct answer is right"
+}
+The correct answer MUST be choices[correct_index]. Make wrong answers plausible but clearly incorrect."""
 
 
 def generate_questions(cert_id: str, skills: list[str], n: int = 3) -> list[dict]:
@@ -28,15 +36,21 @@ def generate_questions(cert_id: str, skills: list[str], n: int = 3) -> list[dict
             question_text = f"Based on approved material, explain how {skill} is applied for {cert_id}."
 
         if question_text:
-            questions.append({
+            q: dict = {
                 "skill": skill,
-                "question": question_text,
+                "question": question_text if isinstance(question_text, str) else question_text.get("question", ""),
                 "citations": [c.source for c in grounded.citations],
-            })
+            }
+            if isinstance(question_text, dict):
+                q["choices"] = question_text.get("choices", [])
+                q["correct_index"] = question_text.get("correct_index", 0)
+                q["hint"] = question_text.get("hint", "")
+                q["explanation"] = question_text.get("explanation", "")
+            questions.append(q)
     return questions
 
 
-def _llm_question(cert_id: str, skill: str, grounded) -> str | None:
+def _llm_question(cert_id: str, skill: str, grounded) -> dict | str | None:
     try:
         import json as _json
         from ._foundry import get_openai_client
@@ -45,8 +59,8 @@ def _llm_question(cert_id: str, skill: str, grounded) -> str | None:
         user_msg = (
             f"Certification: {cert_id}. Skill to test: {skill}.\n\n"
             f"Knowledge base context (source: {citation}):\n{grounded.answer[:600]}\n\n"
-            "Write one realistic practice exam question for this skill and certification. "
-            "Return JSON: {\"question\": \"...\", \"hint\": \"...\"}"
+            "Write one realistic multiple-choice practice exam question. "
+            "Return JSON with keys: question, choices (array of 4 strings), correct_index (0-3), hint, explanation."
         )
         resp = client.chat.completions.create(
             model=MODEL_DEPLOYMENT,
@@ -55,10 +69,12 @@ def _llm_question(cert_id: str, skill: str, grounded) -> str | None:
                 {"role": "user",   "content": user_msg},
             ],
             response_format={"type": "json_object"},
-            max_tokens=200,
+            max_tokens=300,
         )
         data = _json.loads(resp.choices[0].message.content)
-        return data.get("question")
+        if "choices" in data and isinstance(data["choices"], list) and len(data["choices"]) >= 2:
+            return data
+        return data.get("question", f"Based on approved material, explain how {skill} is applied for {cert_id}.")
     except Exception:
         return f"Based on approved material, explain how {skill} is applied for {cert_id}."
 

@@ -36,15 +36,26 @@ def retrieve(query: str, k: int = 3) -> GroundedResult:
     return _retrieve_local(query, k)
 
 
+_DOC_CACHE: dict[str, list[tuple[str, str]]] | None = None  # {doc_name: [(para, para), ...]}
+
+def _load_doc_cache() -> dict[str, list[str]]:
+    global _DOC_CACHE
+    if _DOC_CACHE is None:
+        _DOC_CACHE = {}
+        for doc in sorted(DOCS.glob("*.md")):
+            text = doc.read_text(encoding="utf-8")
+            _DOC_CACHE[doc.name] = [p.strip() for p in text.split("\n\n") if p.strip()]
+    return _DOC_CACHE
+
+
 def _retrieve_local(query: str, k: int) -> GroundedResult:
     terms = {t.lower() for t in query.split() if len(t) > 2}
     hits: list[tuple[int, Citation]] = []
-    for doc in sorted(DOCS.glob("*.md")):
-        text = doc.read_text(encoding="utf-8")
-        for para in [p.strip() for p in text.split("\n\n") if p.strip()]:
+    for doc_name, paras in _load_doc_cache().items():
+        for para in paras:
             score = sum(para.lower().count(t) for t in terms)
             if score:
-                hits.append((score, Citation(source=doc.name, snippet=para[:400])))
+                hits.append((score, Citation(source=doc_name, snippet=para[:400])))
     hits.sort(key=lambda h: h[0], reverse=True)
     top = [c for _, c in hits[:k]]
     if not top:

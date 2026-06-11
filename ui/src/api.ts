@@ -1,7 +1,12 @@
 const BASE = '/api'
 
-let _token: string | null = null
-export const setToken = (t: string | null) => { _token = t }
+const TOKEN_KEY = 'ascent_token'
+let _token: string | null = localStorage.getItem(TOKEN_KEY)
+export const setToken = (t: string | null) => {
+  _token = t
+  if (t) localStorage.setItem(TOKEN_KEY, t)
+  else localStorage.removeItem(TOKEN_KEY)
+}
 export const getToken = () => _token
 
 async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {

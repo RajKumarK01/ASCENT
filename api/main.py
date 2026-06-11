@@ -1,6 +1,8 @@
 """ASCENT FastAPI backend-for-frontend."""
 from __future__ import annotations
 import os
+from dotenv import load_dotenv
+load_dotenv()
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -39,4 +41,5 @@ def login(body: LoginRequest):
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "mode": AGENT_TARGET.upper()}
+    mode = os.environ.get("ASCENT_MODE", "local").strip().upper()
+    return {"status": "ok", "mode": mode}

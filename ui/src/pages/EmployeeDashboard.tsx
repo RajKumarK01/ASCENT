@@ -5,6 +5,7 @@ import { Badge } from '../components/Badge'
 import { ChatPanel } from '../components/ChatPanel'
 import { ContributionHeatmap, type ContributionData } from '../components/ContributionHeatmap'
 import { CertificationPathModal } from '../components/CertificationPathModal'
+import { LoadingScreen } from '../components/LoadingScreen'
 
 function formatDate(date: Date) {
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
@@ -66,7 +67,7 @@ export function EmployeeDashboard() {
       setContribLoading(true)
       const [planData, contributionData] = await Promise.race([
         Promise.all([api.plan(), api.contributions()]),
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000)),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 90000)),
       ]) as [any, ContributionData]
 
       setData(planData)
@@ -162,13 +163,7 @@ export function EmployeeDashboard() {
   const readinessImpact = Math.max(0, Math.round(scorePct / 8))
 
   if (loading && !data) {
-    return (
-      <div className="p-6 max-w-7xl mx-auto space-y-6">
-        {[...Array(4)].map((_, idx) => (
-          <div key={idx} className="h-40 animate-pulse rounded-3xl bg-github-border/30" />
-        ))}
-      </div>
-    )
+    return <LoadingScreen />
   }
 
   if (err && !data) {

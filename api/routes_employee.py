@@ -1,6 +1,7 @@
 from __future__ import annotations
 import re
 import json
+import random
 from datetime import datetime
 from pathlib import Path
 from fastapi import APIRouter, Depends, Query
@@ -204,19 +205,51 @@ def _save_profile(user: dict, profile: dict) -> dict:
 
 def _make_mcq_question(question: dict, cert_id: str) -> dict:
     skill = question.get("skill", "Study skill")
-    correct = question.get("question", "Review the material and choose the best answer.")
-    choices = [
-        correct,
-        f"Describe how {skill} impacts architecture and deployment for {cert_id}.",
-        f"Compare {skill} with unrelated Azure topics outside {cert_id}.",
-        f"Summarise business outcomes that are not directly tied to {skill}.",
+    q_text = question.get("question", "Review the material and choose the best answer.")
+
+    # If the LLM already returned a full MCQ (FOUNDRY mode), shuffle and re-track the index.
+    if question.get("choices") and isinstance(question["choices"], list) and len(question["choices"]) >= 2:
+        choices = list(question["choices"])
+        correct_idx = int(question.get("correct_index", 0))
+        correct_answer = choices[correct_idx]
+        random.shuffle(choices)
+        new_correct = choices.index(correct_answer)
+        return {
+            "skill": skill,
+            "question": q_text,
+            "choices": choices,
+            "correct_index": new_correct,
+            "hint": question.get("hint", "Focus on the certification context."),
+            "explanation": question.get("explanation", ""),
+            "citations": question.get("citations", []),
+        }
+
+    # LOCAL mode: build skill-aware distractors from the semantic seed.
+    seed = _load_semantic_seed()
+    cert_skills = next(
+        (c["skills"] for c in seed.get("certifications", []) if c["id"] == cert_id),
+        []
+    )
+    other_skills = [s for s in cert_skills if s != skill]
+
+    distractor_templates = [
+        f"Configure {other_skills[0] if other_skills else 'Azure networking'} settings to satisfy this requirement.",
+        f"Use {other_skills[1] if len(other_skills) > 1 else 'Azure Monitor'} to address this scenario instead.",
+        f"Apply a general cloud architecture pattern not specific to {cert_id}.",
     ]
+
+    correct_answer = q_text
+    choices = [correct_answer] + distractor_templates[:3]
+    random.shuffle(choices)
+    correct_index = choices.index(correct_answer)
+
     return {
         "skill": skill,
-        "question": correct,
+        "question": q_text,
         "choices": choices,
-        "correct_index": 0,
-        "hint": question.get("hint", "Focus on the certification context."),
+        "correct_index": correct_index,
+        "hint": question.get("hint", f"Consider the specific {cert_id} context for {skill}."),
+        "explanation": "",
         "citations": question.get("citations", []),
     }
 

@@ -232,6 +232,22 @@ export function StudyPlan() {
             </table>
           </Card>
 
+          {cur?.microsoft_learn_modules?.length > 0 && (
+            <Card title="Microsoft Learn — recommended modules">
+              <p className="mb-3 text-xs text-github-muted">Curated via Microsoft Learn MCP · grounded in official exam objectives</p>
+              <div className="space-y-2">
+                {(cur.microsoft_learn_modules as string[]).map((url: string) => (
+                  <a key={url} href={url} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-2 rounded-xl border border-github-border bg-github-bg px-4 py-3 text-sm text-github-blue hover:border-github-blue/50 hover:bg-github-border/20 transition">
+                    <span>📘</span>
+                    <span className="truncate">{url.replace('https://learn.microsoft.com/en-us/training/paths/', '').replace(/\/$/, '').replace(/-/g, ' ')}</span>
+                    <span className="ml-auto shrink-0 text-xs text-github-muted">learn.microsoft.com ↗</span>
+                  </a>
+                ))}
+              </div>
+            </Card>
+          )}
+
           {cur?.citations?.length > 0 && (
             <Card title="Knowledge sources">
               <div className="flex flex-wrap gap-2">
