@@ -22,12 +22,11 @@ function Shell() {
 
   useEffect(() => {
     if (user?.role === 'employee') {
-      // Load profile immediately (fast, no AI) to decide whether to show setup modal
+      // Load profile immediately (fast, no AI); always show setup modal on login
       api.profile().then(p => {
         setProfile(p)
-        if (p?.needs_selection) setShowSetup(true)
-        else refresh()  // start loading plan in background
-      }).catch(() => refresh())
+        setShowSetup(true)   // always show on every login so user can confirm/change path
+      }).catch(() => { setShowSetup(true) })
     }
   }, [user])
 

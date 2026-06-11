@@ -318,6 +318,15 @@ def get_plan(weeks: int = Query(default=4, ge=1, le=16),
              user: dict = Depends(_employee)):
     result = run_for_learner(user["scope"], weeks=weeks)
     result["profile"] = _ensure_profile(user)
+    # Expand assessment questions to MCQ format so Assessment page needs no separate call
+    cert_id = result.get("curator", {}).get("certification", "")
+    asmt = result.get("assessment", {})
+    asmt["questions"] = [
+        _make_mcq_question(q, cert_id) for q in asmt.get("questions", [])
+    ]
+    _record_activity(user, "assessment_taken", 1)
+    if result.get("passed"):
+        _record_activity(user, "assessment_passed", 1)
     return result
 
 
