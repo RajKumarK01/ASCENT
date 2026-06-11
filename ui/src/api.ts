@@ -25,4 +25,10 @@ export const api = {
   insights:    (team?: string) => request<any>(`/manager/insights${team ? `?team=${team}` : ''}`),
   health:      () => request<{status:string;mode:string}>('/health'),
   chat:        (message: string) => request<{message:string;reply:string;result:any;intent:any}>('/chat', { method: 'POST', body: JSON.stringify({ message }) }),
+  contributions: () => request<{[date:string]:number}>('/employee/study/contributions'),
+  studyCheckin: () => request<{success:boolean;date:string}>('/employee/study/checkin', { method: 'POST', body: JSON.stringify({}) }),
+  profile:     () => request<any>('/employee/profile'),
+  updateProfile: (body: {path:string;certification?:string}) => request<any>('/employee/profile', { method: 'POST', body: JSON.stringify(body) }),
+  completeModule: (moduleId: string) => request<any>(`/employee/study/module/${encodeURIComponent(moduleId)}/complete`, { method: 'POST', body: JSON.stringify({}) }),
+  post:        <T,>(path: string, body: any) => request<T>(path, { method: 'POST', body: JSON.stringify(body) }),
 }

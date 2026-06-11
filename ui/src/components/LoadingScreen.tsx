@@ -39,9 +39,8 @@ export function LoadingScreen() {
         {/* Animated steps */}
         <div className="space-y-3">
           {STEPS.map((step, i) => {
-            const done    = i < activeStep
-            const active  = i === activeStep
-            const pending = i > activeStep
+            const done   = i < activeStep
+            const active = i === activeStep
             return (
               <div key={i}
                 className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all duration-500 ${

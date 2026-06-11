@@ -1,10 +1,10 @@
 const variants = {
-  green:  'bg-emerald-100 text-emerald-700',
-  red:    'bg-red-100 text-red-700',
-  amber:  'bg-amber-100 text-amber-700',
-  blue:   'bg-blue-100 text-blue-700',
-  slate:  'bg-slate-100 text-slate-600',
-  purple: 'bg-purple-100 text-purple-700',
+  green:  'bg-github-green/20 text-github-green',
+  red:    'bg-github-red/20 text-github-red',
+  amber:  'bg-github-yellow/20 text-github-yellow',
+  blue:   'bg-github-blue/20 text-github-blue',
+  slate:  'bg-github-border/50 text-github-muted',
+  purple: 'bg-github-purple/20 text-github-purple',
 }
 type V = keyof typeof variants
 

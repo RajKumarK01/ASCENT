@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, ReactNode } from 'react'
+import { createContext, useContext, useState, type ReactNode } from 'react'
 import { api, setToken } from './api'
 
 interface User { email: string; name: string; role: string; scope: string }

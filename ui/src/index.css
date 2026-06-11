@@ -1,4 +1,23 @@
 @import "tailwindcss";
+@config "../tailwind.config.ts";
+
+:root {
+  /* GitHub dark theme */
+  --bg-primary: #0d1117;
+  --bg-surface: #161b22;
+  --border-color: #30363d;
+  --text-primary: #c9d1d9;
+  --text-muted: #8b949e;
+  --accent-blue: #58a6ff;
+  --contrib-light: #3fb950;
+  --contrib-medium: #26a641;
+  --contrib-dark: #1a7f37;
+}
 
 * { box-sizing: border-box; }
-body { margin: 0; font-family: system-ui, 'Segoe UI', sans-serif; background: #f8fafc; }
+body { 
+  margin: 0; 
+  font-family: system-ui, 'Segoe UI', sans-serif; 
+  background: #0d1117; 
+  color: #c9d1d9;
+}

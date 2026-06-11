@@ -12,11 +12,6 @@ def run_for_learner(learner_id: str, weeks: int = 4) -> dict:
     return _call_local(learner_id, weeks)
 
 
-def run_for_learner_chat(learner_id: str, query: str, weeks: int = 4) -> dict:
-    from src.orchestrator import run_for_learner_chat as _run_chat
-    return _run_chat(learner_id, query=query, weeks=weeks)
-
-
 def run_manager_insights(team: str | None = None) -> dict:
     if AGENT_TARGET == "foundry":
         # Manager insights don't go through the hosted agent — run locally always.
