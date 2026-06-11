@@ -22,3 +22,8 @@ class RegenerateRequest(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str
+
+
+class ProfileUpdateRequest(BaseModel):
+    path: str
+    certification: str | None = None

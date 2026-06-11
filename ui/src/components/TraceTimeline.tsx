@@ -18,12 +18,12 @@ function stepIcon(line: string) {
 }
 
 function stepColor(line: string) {
-  if (line.includes('[verifier]')) return 'border-amber-400 bg-amber-50'
-  if (line.includes('[self-reflect]')) return 'border-purple-400 bg-purple-50'
-  if (line.includes('READY ->')) return 'border-emerald-400 bg-emerald-50'
-  if (line.includes('NOT READY')) return 'border-red-400 bg-red-50'
-  if (line.includes('[concurrent]')) return 'border-blue-400 bg-blue-50'
-  return 'border-slate-200 bg-white'
+  if (line.includes('[verifier]')) return 'border-github-yellow/50 bg-github-yellow/10'
+  if (line.includes('[self-reflect]')) return 'border-github-purple/50 bg-github-purple/10'
+  if (line.includes('READY ->')) return 'border-github-green/50 bg-github-green/10'
+  if (line.includes('NOT READY')) return 'border-github-red/50 bg-github-red/10'
+  if (line.includes('[concurrent]')) return 'border-github-blue/50 bg-github-blue/10'
+  return 'border-github-border bg-github-surface'
 }
 
 export function TraceTimeline({ trace }: { trace: string[] }) {
@@ -31,7 +31,7 @@ export function TraceTimeline({ trace }: { trace: string[] }) {
   return (
     <div className="mt-2">
       <button onClick={() => setOpen(o => !o)}
-        className="text-sm text-slate-500 hover:text-slate-700 flex items-center gap-1 font-medium">
+        className="text-sm text-github-muted hover:text-github-text flex items-center gap-1 font-medium transition-colors">
         <span className={`transition-transform ${open ? 'rotate-90' : ''}`}>▶</span>
         Reasoning trace ({trace.length} steps)
       </button>
@@ -40,7 +40,7 @@ export function TraceTimeline({ trace }: { trace: string[] }) {
           {trace.map((line, i) => (
             <div key={i} className={`flex gap-3 p-2.5 rounded-xl border text-sm ${stepColor(line)}`}>
               <span className="text-base w-6 shrink-0 text-center">{stepIcon(line)}</span>
-              <span className="font-mono text-xs text-slate-700 break-all">{line}</span>
+              <span className="font-mono text-xs text-github-text break-all">{line}</span>
             </div>
           ))}
         </div>

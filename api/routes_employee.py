@@ -1,10 +1,13 @@
 from __future__ import annotations
 import re
+import json
+from datetime import datetime
+from pathlib import Path
 from fastapi import APIRouter, Depends, Query
 
 from .deps import current_user, require_role
-from .models import RegenerateRequest, ChatRequest
-from .agent_client import run_for_learner, run_for_learner_chat
+from .models import RegenerateRequest, ChatRequest, ProfileUpdateRequest
+from .agent_client import run_for_learner
 
 router = APIRouter(prefix="/api", tags=["employee"])
 
@@ -13,6 +16,251 @@ _employee = require_role("employee")
 _WEEKS_RE  = re.compile(r'(\d+)[\s\-]*week', re.I)
 _FOCUS_RE  = re.compile(r'focus\s+on\s+([A-Za-z/ ]{3,30})', re.I)
 
+# Path to persistent study data files
+CONTRIBUTIONS_FILE = Path(__file__).parent.parent / "data" / "study_contributions.json"
+PROFILE_FILE = Path(__file__).parent.parent / "data" / "learner_profiles.json"
+SEMANTIC_SEED_FILE = Path(__file__).parent.parent / "data" / "semantic_seed.json"
+
+def _load_contributions() -> dict:
+    """Load study contributions from JSON file."""
+    if CONTRIBUTIONS_FILE.exists():
+        with open(CONTRIBUTIONS_FILE, encoding='utf-8') as f:
+            raw = json.load(f)
+        return _normalize_contributions(raw)
+    return {}
+
+def _save_contributions(data: dict) -> None:
+    """Save study contributions to JSON file."""
+    CONTRIBUTIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(CONTRIBUTIONS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=2)
+
+
+def _normalize_contributions(raw: dict) -> dict:
+    if not isinstance(raw, dict):
+        return {}
+
+    normalized: dict = {}
+    for learner_id, learner_data in raw.items():
+        if isinstance(learner_data, dict) and "dates" in learner_data:
+            normalized[learner_id] = learner_data
+        elif isinstance(learner_data, dict):
+            normalized[learner_id] = {"dates": learner_data, "activities": []}
+        else:
+            normalized[learner_id] = {"dates": {}, "activities": []}
+    return normalized
+
+
+def _to_date_key(dt: datetime) -> str:
+    return f"{dt.year}-{dt.month:02d}-{dt.day:02d}"
+
+
+def _get_learner_contributions(user: dict) -> tuple[dict, dict]:
+    contributions = _load_contributions()
+    learner_id = user["scope"]
+    learner_data = contributions.get(learner_id)
+    if learner_data is None:
+        learner_data = {"dates": {}, "activities": []}
+        contributions[learner_id] = learner_data
+    elif not isinstance(learner_data, dict) or "dates" not in learner_data:
+        learner_data = {"dates": learner_data if isinstance(learner_data, dict) else {}, "activities": []}
+        contributions[learner_id] = learner_data
+    return contributions, learner_data
+
+
+def _record_activity(user: dict, activity_type: str, count: int = 1, date: datetime | None = None, allow_duplicate: bool = False) -> None:
+    contributions, learner_data = _get_learner_contributions(user)
+    date_key = _to_date_key(date or datetime.now())
+
+    if not allow_duplicate:
+        for activity in learner_data["activities"]:
+            if activity.get("date") == date_key and activity.get("type") == activity_type:
+                return
+
+    learner_data["dates"][date_key] = learner_data["dates"].get(date_key, 0) + count
+    learner_data["activities"].append({
+        "date": date_key,
+        "type": activity_type,
+        "count": count,
+    })
+    _save_contributions(contributions)
+
+
+def _load_profiles() -> dict:
+    if PROFILE_FILE.exists():
+        with open(PROFILE_FILE, encoding='utf-8') as f:
+            return json.load(f)
+    return {}
+
+def _save_profiles(data: dict) -> None:
+    PROFILE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(PROFILE_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=2)
+
+def _load_semantic_seed() -> dict:
+    if SEMANTIC_SEED_FILE.exists():
+        with open(SEMANTIC_SEED_FILE, encoding='utf-8') as f:
+            return json.load(f)
+    return {}
+
+def _cert_info(cert_id: str) -> dict | None:
+    seed = _load_semantic_seed()
+    for cert in seed.get("certifications", []):
+        if cert["id"] == cert_id:
+            return cert
+    return None
+
+def _resolve_certification(user: dict) -> str:
+    cert_id = user.get("certification")
+    if cert_id and _validate_certification(cert_id):
+        return cert_id
+
+    seed = _load_semantic_seed()
+    role_info = seed.get("roles", {}).get(user.get("role", ""), {})
+    primary = role_info.get("primary_cert")
+    if primary and _validate_certification(primary):
+        return primary
+
+    certifications = seed.get("certifications", [])
+    return certifications[0]["id"] if certifications else ""
+
+def _recommended_chain(user: dict) -> list[str]:
+    cert_id = _resolve_certification(user)
+    cert_info = _cert_info(cert_id)
+    chain = [cert_id] if cert_id else []
+    if cert_info and cert_info.get("advancement"):
+        chain.append(cert_info["advancement"])
+    return chain
+
+def _path_options(user: dict) -> list[dict]:
+    seed = _load_semantic_seed()
+    role_info = seed.get("roles", {}).get(user.get("role", ""), {})
+    current_cert = _resolve_certification(user)
+    options = [
+        {
+            "key": "recommended",
+            "title": "Recommended journey",
+            "description": "Primary certification plus advancement path for your role.",
+            "certifications": _recommended_chain(user),
+        },
+        {
+            "key": "custom",
+            "title": "Custom journey",
+            "description": "Pick a certification goal that fits your own career path.",
+            "certifications": [current_cert],
+        },
+    ]
+    secondary = role_info.get("secondary_cert")
+    if secondary and secondary != current_cert:
+        options[1]["certifications"].append(secondary)
+    return options
+
+def _make_modules(cert_id: str) -> list[dict]:
+    info = _cert_info(cert_id) or {}
+    skills = info.get("skills", [])
+    per_module = round(info.get("recommended_hours", 20) / max(len(skills), 1), 1)
+    return [
+        {
+            "id": f"{cert_id}-{idx}",
+            "title": skill,
+            "skill": skill,
+            "status": "not started",
+            "target_hours": per_module,
+        }
+        for idx, skill in enumerate(skills, start=1)
+    ]
+
+def _create_default_profile(user: dict) -> dict:
+    cert_chain = _recommended_chain(user)
+    active_cert = cert_chain[0]
+    modules = _make_modules(active_cert)
+    return {
+        "learner_id": user["scope"],
+        "selected_path": "recommended",
+        "active_certification": active_cert,
+        "certification_chain": cert_chain,
+        "path_title": "Recommended certification journey",
+        "path_options": _path_options(user),
+        "modules": modules,
+        "progress": {"completed": 0, "total": len(modules)},
+        "needs_selection": True,
+        "message": "Welcome! Choose your first study path to personalise your journey.",
+    }
+
+def _ensure_profile(user: dict) -> dict:
+    profiles = _load_profiles()
+    profile = profiles.get(user["scope"])
+    if not profile:
+        profile = _create_default_profile(user)
+        profiles[user["scope"]] = profile
+        _save_profiles(profiles)
+    return profile
+
+def _save_profile(user: dict, profile: dict) -> dict:
+    profiles = _load_profiles()
+    profiles[user["scope"]] = profile
+    _save_profiles(profiles)
+    return profile
+
+def _make_mcq_question(question: dict, cert_id: str) -> dict:
+    skill = question.get("skill", "Study skill")
+    correct = question.get("question", "Review the material and choose the best answer.")
+    choices = [
+        correct,
+        f"Describe how {skill} impacts architecture and deployment for {cert_id}.",
+        f"Compare {skill} with unrelated Azure topics outside {cert_id}.",
+        f"Summarise business outcomes that are not directly tied to {skill}.",
+    ]
+    return {
+        "skill": skill,
+        "question": correct,
+        "choices": choices,
+        "correct_index": 0,
+        "hint": question.get("hint", "Focus on the certification context."),
+        "citations": question.get("citations", []),
+    }
+
+def _cap_profile_progress(profile: dict) -> dict:
+    completed = sum(1 for module in profile.get("modules", []) if module.get("status") == "complete")
+    profile["progress"] = {"completed": completed, "total": len(profile.get("modules", []))}
+    return profile
+
+def _validate_certification(cert_id: str) -> bool:
+    return _cert_info(cert_id) is not None
+
+def _update_profile_path(user: dict, path: str, certification: str | None = None) -> dict:
+    profile = _ensure_profile(user)
+    chosen_cert = certification if certification else profile["active_certification"]
+    if not _validate_certification(chosen_cert):
+        chosen_cert = profile["active_certification"]
+    if path == "recommended":
+        profile["certification_chain"] = [chosen_cert]
+        next_cert = _cert_info(chosen_cert).get("advancement") if _cert_info(chosen_cert) else None
+        if next_cert:
+            profile["certification_chain"].append(next_cert)
+        profile["path_title"] = "Recommended certification journey"
+    else:
+        profile["certification_chain"] = [chosen_cert]
+        profile["path_title"] = "Custom certification journey"
+    profile["selected_path"] = path
+    profile["active_certification"] = chosen_cert
+    profile["modules"] = _make_modules(chosen_cert)
+    profile["needs_selection"] = False
+    profile["message"] = "Your journey is set. Track progress across modules and certifications."
+    _cap_profile_progress(profile)
+    return _save_profile(user, profile)
+
+def _complete_module(user: dict, module_id: str) -> dict:
+    profile = _ensure_profile(user)
+    for module in profile.get("modules", []):
+        if module.get("id") == module_id:
+            if module.get("status") != "complete":
+                module["status"] = "complete"
+                _cap_profile_progress(profile)
+                _save_profile(user, profile)
+                _record_activity(user, "module_completed", 1)
+            return profile
+    return _save_profile(user, profile)
 
 def _parse_intent(message: str, default_weeks: int = 4) -> dict:
     """Extract weeks and focus-skill hints from free-text."""
@@ -35,95 +283,121 @@ def me(user: dict = Depends(current_user)):
 @router.get("/plan")
 def get_plan(weeks: int = Query(default=4, ge=1, le=16),
              user: dict = Depends(_employee)):
-    return run_for_learner(user["scope"], weeks=weeks)
+    result = run_for_learner(user["scope"], weeks=weeks)
+    result["profile"] = _ensure_profile(user)
+    return result
 
 
 @router.post("/plan/regenerate")
 def regenerate_plan(body: RegenerateRequest, user: dict = Depends(_employee)):
-    return run_for_learner(user["scope"], weeks=body.weeks)
+    result = run_for_learner(user["scope"], weeks=body.weeks)
+    result["profile"] = _ensure_profile(user)
+    return result
 
 
 @router.get("/assessment")
 def get_assessment(user: dict = Depends(_employee)):
     result = run_for_learner(user["scope"])
-    return result.get("assessment", {})
+    assessment = result.get("assessment", {})
+    _record_activity(user, "assessment_taken", 1)
+    if result.get("passed"):
+        _record_activity(user, "assessment_passed", 1)
+    assessment["questions"] = [
+        _make_mcq_question(q, result.get("curator", {}).get("certification", ""))
+        for q in assessment.get("questions", [])
+    ]
+    assessment["profile"] = _ensure_profile(user)
+    return assessment
+
+
+@router.get("/employee/profile")
+def get_employee_profile(user: dict = Depends(_employee)):
+    profile = _ensure_profile(user)
+    return profile
+
+
+@router.post("/employee/profile")
+def update_employee_profile(body: ProfileUpdateRequest, user: dict = Depends(_employee)):
+    return _update_profile_path(user, body.path, body.certification)
+
+
+@router.post("/employee/study/module/{module_id}/complete")
+def complete_study_module(module_id: str, user: dict = Depends(_employee)):
+    return _complete_module(user, module_id)
 
 
 @router.post("/chat")
 def chat(body: ChatRequest, user: dict = Depends(_employee)):
-    """Free-text chat: Orchestrator classifies intent, plans route, dispatches only needed agents."""
-    params = _parse_intent(body.message)
-    result = run_for_learner_chat(user["scope"], query=body.message, weeks=params["weeks"])
+    """Free-text chat: interpret intent, run the orchestrator, return a structured reply."""
+    intent = _parse_intent(body.message)
+    result = run_for_learner(user["scope"], weeks=intent["weeks"])
 
-    intent = result.get("intent", "full")
-    asmt   = result.get("assessment") or {}
-    plan   = result.get("study_plan") or {}
-    cur    = result.get("curator") or {}
-    eng    = result.get("engagement") or {}
-    r      = asmt.get("readiness") or {}
-    passed = result.get("passed")
+    # Build a plain-language reply summarising the result
+    plan   = result.get("study_plan", {})
+    asmt   = result.get("assessment", {})
+    r      = asmt.get("readiness", {})
+    passed = result.get("passed", False)
     loops  = result.get("loops", 0)
 
-    # Build reply based on which agents actually ran
-    if intent == "assessment":
-        qs = asmt.get("questions", [])
-        if qs:
-            reply = (
-                f"Here are {len(qs)} practice question(s) for your "
-                f"{asmt.get('certification', 'certification')} grounded in the knowledge base. "
-                f"All questions are cited." if asmt.get("all_questions_cited") else
-                f"Here are {len(qs)} practice question(s) generated for you."
-            )
-        else:
-            reply = "No grounded questions could be generated — the knowledge base returned no content for your skills."
+    if "help" in body.message.lower() or "prepare" in body.message.lower() or not body.message.strip():
+        reply = (
+            f"I've reviewed {user['scope']}'s learning profile for "
+            f"{result.get('curator', {}).get('certification', 'your certification')}. "
+        )
+    elif "ready" in body.message.lower() or "exam" in body.message.lower():
+        reply = f"Readiness check for {user['scope']}: "
+    elif intent["focus_skill"]:
+        reply = f"I've built a plan focusing on {intent['focus_skill']}. "
+    else:
+        reply = "Here's an updated learning plan based on your request. "
 
-    elif intent == "readiness":
-        if r:
-            if passed:
-                reply = (f"You're READY! Practice score and study hours both meet the threshold. "
-                         f"Next certification: {result.get('next_step') or 'none'}.")
-            else:
-                reply = (f"Not quite ready yet. "
-                         f"{'Score gap: +' + str(r['score_gap']) + '% needed. ' if r.get('score_gap') else ''}"
-                         f"{'Hours gap: ' + str(r['hours_gap']) + 'h more study needed.' if r.get('hours_gap') else ''}")
-        else:
-            reply = "Could not compute readiness — no assessment data available."
-
-    elif intent == "study_plan":
-        if plan:
-            reply = (f"Here's your study plan for {plan.get('certification')}: "
-                     f"{plan.get('total_recommended_hours')}h over {plan.get('weeks')} weeks "
-                     f"({plan.get('hours_per_week')}h/week). "
-                     f"Milestones are sequenced with skill gaps first.")
-        else:
-            reply = "Could not generate a study plan."
-
-    elif intent == "engagement":
-        window = eng.get("window") or {}
-        reply  = (f"Based on your work rhythm: {window.get('cadence', 'default cadence')}. "
-                  f"{eng.get('reminder_policy', '')} "
-                  f"{'High meeting load detected — condensed sessions recommended.' if window.get('capacity_constrained') else ''}")
-
-    elif intent == "curator":
-        reply = (f"For {cur.get('certification')}, focus on: {', '.join(cur.get('skills', []))}. "
-                 f"Recommended study: {cur.get('recommended_hours')}h. "
-                 f"Content grounded in {len(cur.get('citations', []))} source(s).")
-
-    else:  # full pipeline
-        if passed:
-            reply = (f"Full plan complete. You're on track for exam readiness in "
-                     f"{plan.get('weeks')} weeks ({plan.get('hours_per_week')}h/week). "
-                     f"{'Next: ' + result['next_step'] + '.' if result.get('next_step') else ''}")
-        else:
-            reply = (f"Full plan complete. You need {r.get('hours_gap', 0)}h more study and "
-                     f"+{r.get('score_gap', 0)}% on practice scores. "
-                     f"Plan extended to {plan.get('weeks')} weeks.")
-            if loops:
-                reply += f" Reflection loop ran {loops} time(s)."
+    if passed:
+        reply += (
+            f"Good news — you're on track to be exam-ready in {plan.get('weeks')} weeks "
+            f"({plan.get('hours_per_week')}h/week). "
+        )
+        if result.get("next_step"):
+            reply += f"After this certification, consider {result['next_step']}."
+    else:
+        reply += (
+            f"You need {r.get('hours_gap', 0)}h more study and "
+            f"+{r.get('score_gap', 0)}% on practice scores. "
+            f"I've extended your plan to {plan.get('weeks')} weeks to close the gap."
+        )
+        if loops:
+            reply += f" The planner ran {loops} reflection loop(s) to find the best path."
 
     return {
         "message": body.message,
-        "reply":   reply,
-        "result":  result,
-        "intent":  {"intent": intent, "route": result.get("route", []), "weeks": params["weeks"]},
+        "reply": reply,
+        "result": result,
+        "intent": intent,
+    }
+
+
+@router.get("/employee/study/contributions")
+def get_contributions(user: dict = Depends(_employee)) -> dict:
+    """Get study contribution history for the last 365 days."""
+    contributions = _load_contributions()
+    learner_id = user["scope"]
+    learner_data = contributions.get(learner_id, {})
+    if isinstance(learner_data, dict) and "dates" in learner_data:
+        return learner_data["dates"]
+    return learner_data
+
+
+@router.post("/employee/study/checkin")
+def checkin_study(user: dict = Depends(_employee)) -> dict:
+    """Mark today's study as completed."""
+    today = datetime.now()
+    date_str = f"{today.year}-{today.month:02d}-{today.day:02d}"
+    _record_activity(user, "study_session_completed", 1, date=today, allow_duplicate=True)
+    contributions = _load_contributions()
+    learner_id = user["scope"]
+    learner_data = contributions.get(learner_id, {"dates": {}, "activities": []})
+
+    return {
+        "success": True,
+        "date": date_str,
+        "count": learner_data["dates"].get(date_str, 1)
     }

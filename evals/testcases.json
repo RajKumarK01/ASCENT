@@ -3,7 +3,7 @@
   "grounding": [
     { "id": "G1", "query": "AZ-204 recommended study hours", "expect_citation": true },
     { "id": "G2", "query": "DevOps Engineer primary certification", "expect_citation": true },
-    { "id": "G3", "query": "Renaissance oil painting brushstroke techniques", "expect_citation": false }
+    { "id": "G3", "query": "unrelated quantum chromodynamics question", "expect_citation": false }
   ],
   "readiness": [
     { "id": "R1", "practice_score_avg": 82, "hours_studied": 24, "cert": "AZ-400", "expect_ready": true,  "_why": "score>=75, hours>=22.5" },

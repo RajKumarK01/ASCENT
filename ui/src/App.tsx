@@ -17,9 +17,9 @@ function Shell() {
   if (!user) return <Navigate to="/login" replace />
 
   return (
-    <div className="flex min-h-screen bg-slate-50">
+    <div className="flex min-h-screen bg-github-bg">
       <Sidebar mode={mode} />
-      <main className="flex-1 overflow-auto">
+      <main className="min-h-0 flex-1 overflow-auto">
         <Routes>
           {user.role === 'employee' ? (
             <>

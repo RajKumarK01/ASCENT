@@ -1,0 +1,116 @@
+{
+  "L-1001": {
+    "learner_id": "L-1001",
+    "selected_path": "custom",
+    "active_certification": "AZ-204",
+    "certification_chain": [
+      "AZ-204"
+    ],
+    "path_title": "Custom certification journey",
+    "path_options": [
+      {
+        "key": "recommended",
+        "title": "Recommended journey",
+        "description": "Primary certification plus advancement path for your role.",
+        "certifications": [
+          "AZ-204",
+          "AZ-305"
+        ]
+      },
+      {
+        "key": "custom",
+        "title": "Custom journey",
+        "description": "Pick a certification goal that fits your own career path.",
+        "certifications": [
+          "AZ-204"
+        ]
+      }
+    ],
+    "modules": [
+      {
+        "id": "AZ-204-1",
+        "title": "API Development",
+        "skill": "API Development",
+        "status": "not started",
+        "target_hours": 6.7
+      },
+      {
+        "id": "AZ-204-2",
+        "title": "Azure Functions",
+        "skill": "Azure Functions",
+        "status": "not started",
+        "target_hours": 6.7
+      },
+      {
+        "id": "AZ-204-3",
+        "title": "Storage",
+        "skill": "Storage",
+        "status": "not started",
+        "target_hours": 6.7
+      }
+    ],
+    "progress": {
+      "completed": 0,
+      "total": 3
+    },
+    "needs_selection": false,
+    "message": "Your journey is set. Track progress across modules and certifications."
+  },
+  "L-1002": {
+    "learner_id": "L-1002",
+    "selected_path": "custom",
+    "active_certification": "AZ-204",
+    "certification_chain": [
+      "AZ-204"
+    ],
+    "path_title": "Custom certification journey",
+    "path_options": [
+      {
+        "key": "recommended",
+        "title": "Recommended journey",
+        "description": "Primary certification plus advancement path for your role.",
+        "certifications": [
+          "AZ-204",
+          "AZ-305"
+        ]
+      },
+      {
+        "key": "custom",
+        "title": "Custom journey",
+        "description": "Pick a certification goal that fits your own career path.",
+        "certifications": [
+          "AZ-204"
+        ]
+      }
+    ],
+    "modules": [
+      {
+        "id": "AZ-204-1",
+        "title": "API Development",
+        "skill": "API Development",
+        "status": "not started",
+        "target_hours": 6.7
+      },
+      {
+        "id": "AZ-204-2",
+        "title": "Azure Functions",
+        "skill": "Azure Functions",
+        "status": "not started",
+        "target_hours": 6.7
+      },
+      {
+        "id": "AZ-204-3",
+        "title": "Storage",
+        "skill": "Storage",
+        "status": "not started",
+        "target_hours": 6.7
+      }
+    ],
+    "progress": {
+      "completed": 0,
+      "total": 3
+    },
+    "needs_selection": false,
+    "message": "Your journey is set. Track progress across modules and certifications."
+  }
+}

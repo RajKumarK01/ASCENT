@@ -2,35 +2,35 @@
   {
     "email": "emp.morgan@ascent.demo",
     "name": "Morgan",
-    "password_hash": "$2b$12$pPQno9GiBmPbR8eRitQ16eKcGSh.MG0qygRRlcrPOP5D7BUl2KJrS",
+    "password_hash": "$2b$12$VeIIqhR1Go/mz32yXnHrAO8EwtvdT828c9q64JypSoK1QwmIFSCZu",
     "role": "employee",
     "scope": "L-1001"
   },
   {
     "email": "emp.alex@ascent.demo",
     "name": "Alex",
-    "password_hash": "$2b$12$xHn6YcKdOAi3EBvXfcHNHe2ZzvsPxQDRz4HgIgxDXCe65S36RE.kO",
+    "password_hash": "$2b$12$esbmjil.npnaGt0F.g8fS.Gvwfymu8Wwt4fNc39kHUpIcCniVkPGy",
     "role": "employee",
     "scope": "L-1002"
   },
   {
     "email": "emp.casey@ascent.demo",
     "name": "Casey",
-    "password_hash": "$2b$12$AGYTaRR1zPXVKe15hFQcO.ulQtAhKKAeruBkzhvFrrqWdQH7sbvVu",
+    "password_hash": "$2b$12$lEPfbKABKFtm5P8Hv0HCnOVQGhoeaRhBPZO8uSNPGBFWUz9AxuhF2",
     "role": "employee",
     "scope": "L-1004"
   },
   {
     "email": "mgr.taylor@ascent.demo",
     "name": "Taylor",
-    "password_hash": "$2b$12$sZUgzp7qFucmJnx4SxdWPupV4IhCDupNbPdDLz53N0mq2mpDP1Kvy",
+    "password_hash": "$2b$12$yE0iyOoQKguV0XRU1FnR4u4GyHK7ozb9DL6tlUMA0HO.Q10YT1zYa",
     "role": "manager",
     "scope": "TEAM-A"
   },
   {
     "email": "mgr.jordan@ascent.demo",
     "name": "Jordan",
-    "password_hash": "$2b$12$9minTWwRZVBgBKP8dvDqdeykFv4xd/xmDL/Yaw5krdrzH5RY0YEQC",
+    "password_hash": "$2b$12$4nuSe5T/thXJLeU5o7i4HuGvWKNYXF0AguhfC1uFXS6GvIStUqh8e",
     "role": "manager",
     "scope": "all_teams"
   }
