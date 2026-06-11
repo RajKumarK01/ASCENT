@@ -2,9 +2,9 @@
   "L-1001": {
     "learner_id": "L-1001",
     "selected_path": "custom",
-    "active_certification": "AZ-204",
+    "active_certification": "SC-200",
     "certification_chain": [
-      "AZ-204"
+      "SC-200"
     ],
     "path_title": "Custom certification journey",
     "path_options": [
@@ -28,23 +28,23 @@
     ],
     "modules": [
       {
-        "id": "AZ-204-1",
-        "title": "API Development",
-        "skill": "API Development",
+        "id": "SC-200-1",
+        "title": "Threat Detection",
+        "skill": "Threat Detection",
         "status": "not started",
         "target_hours": 6.7
       },
       {
-        "id": "AZ-204-2",
-        "title": "Azure Functions",
-        "skill": "Azure Functions",
+        "id": "SC-200-2",
+        "title": "Sentinel",
+        "skill": "Sentinel",
         "status": "not started",
         "target_hours": 6.7
       },
       {
-        "id": "AZ-204-3",
-        "title": "Storage",
-        "skill": "Storage",
+        "id": "SC-200-3",
+        "title": "Defender",
+        "skill": "Defender",
         "status": "not started",
         "target_hours": 6.7
       }
