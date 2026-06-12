@@ -30,12 +30,12 @@ export function PlanProvider({ children }: { children: ReactNode }) {
     try {
       const [planData, contribData] = await Promise.race([
         Promise.all([api.plan(targetWeeks), api.contributions()]),
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 90000)),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 180000)),
       ]) as [any, ContributionData]
       setData(planData)
       setContributions(contribData)
     } catch (ex: any) {
-      setError(ex.message === 'timeout' ? 'Unable to load recommendations. Retry.' : ex.message ?? 'Error')
+      setError(ex.message === 'timeout' ? 'Plan generation timed out (AI agents are busy). Please retry.' : ex.message ?? 'Error loading plan.')
     } finally {
       setLoading(false)
     }

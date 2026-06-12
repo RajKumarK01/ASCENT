@@ -7,11 +7,101 @@
     "Security Engineer": { "primary_cert": "SC-200", "secondary_cert": null }
   },
   "certifications": [
-    { "id": "AZ-204", "title": "Developing Solutions for Azure", "skills": ["API Development", "Azure Functions", "Storage"], "recommended_hours": 20, "prerequisites": [], "advancement": "AZ-305" },
-    { "id": "AZ-305", "title": "Azure Solutions Architect",      "skills": ["Architecture", "Governance", "Networking"],   "recommended_hours": 30, "prerequisites": ["AZ-204"], "advancement": null },
-    { "id": "AZ-400", "title": "DevOps Engineer Expert",         "skills": ["CI/CD", "Monitoring", "GitHub Actions"],      "recommended_hours": 25, "prerequisites": [], "advancement": null },
-    { "id": "DP-203", "title": "Data Engineering on Azure",      "skills": ["Data Pipelines", "Storage", "Stream Processing"], "recommended_hours": 22, "prerequisites": [], "advancement": null },
-    { "id": "SC-200", "title": "Security Operations Analyst",    "skills": ["Threat Detection", "Sentinel", "Defender"],   "recommended_hours": 20, "prerequisites": [], "advancement": null }
+    {
+      "id": "AZ-204",
+      "title": "Developing Solutions for Azure",
+      "skills": [
+        "API Development",
+        "Azure Functions",
+        "Azure Storage",
+        "Azure Cosmos DB",
+        "Azure App Service",
+        "Azure Key Vault",
+        "Azure Cache for Redis",
+        "Azure Service Bus",
+        "Authentication & Authorization",
+        "Azure Container Apps"
+      ],
+      "recommended_hours": 40,
+      "prerequisites": [],
+      "advancement": "AZ-305"
+    },
+    {
+      "id": "AZ-305",
+      "title": "Azure Solutions Architect",
+      "skills": [
+        "Solution Architecture Design",
+        "Identity & Governance",
+        "Azure Networking",
+        "High Availability & Disaster Recovery",
+        "Azure Monitor & Logging",
+        "Data Storage Architecture",
+        "Application Architecture",
+        "Security Architecture",
+        "Migration Strategies",
+        "Cost Optimization"
+      ],
+      "recommended_hours": 50,
+      "prerequisites": ["AZ-204"],
+      "advancement": null
+    },
+    {
+      "id": "AZ-400",
+      "title": "DevOps Engineer Expert",
+      "skills": [
+        "CI/CD Pipelines",
+        "GitHub Actions",
+        "Infrastructure as Code",
+        "Azure Monitor & App Insights",
+        "Package Management",
+        "Security in DevOps",
+        "Containerization & AKS",
+        "Test Automation",
+        "Source Control Management",
+        "Release Strategies"
+      ],
+      "recommended_hours": 45,
+      "prerequisites": [],
+      "advancement": null
+    },
+    {
+      "id": "DP-203",
+      "title": "Data Engineering on Azure",
+      "skills": [
+        "Data Ingestion & Pipelines",
+        "Azure Data Factory",
+        "Azure Synapse Analytics",
+        "Azure Data Lake Storage",
+        "Stream Processing",
+        "Azure Databricks",
+        "Delta Lake",
+        "Data Security & Compliance",
+        "Performance Optimization",
+        "Data Modeling"
+      ],
+      "recommended_hours": 45,
+      "prerequisites": [],
+      "advancement": null
+    },
+    {
+      "id": "SC-200",
+      "title": "Security Operations Analyst",
+      "skills": [
+        "Threat Detection",
+        "Microsoft Sentinel",
+        "Microsoft Defender for Cloud",
+        "Microsoft Defender for Endpoint",
+        "KQL Query Language",
+        "Incident Response",
+        "Threat Hunting",
+        "Security Operations Center",
+        "Identity Protection",
+        "Compliance & Governance"
+      ],
+      "recommended_hours": 40,
+      "prerequisites": [],
+      "advancement": null
+    }
   ],
   "rules": {
     "pass_threshold_practice_score": 75,

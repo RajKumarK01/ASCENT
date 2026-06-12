@@ -33,9 +33,22 @@ def run(team: str | None = None) -> dict:
     summary = {}
     for t, v in by_team.items():
         n = v["learners"]
-        summary[t] = {
-            **v,
-            "readiness_rate": round(100 * v["ready"] / n) if n else 0,
-            "risk_rate": round(100 * v["at_risk"] / n) if n else 0,
-        }
+        if n < 3:
+            # k-anonymity: suppress per-team detail when team is too small to anonymise
+            summary[t] = {
+                "learners": n,
+                "k_anon_applied": True,
+                "suppressed": True,
+                "reason": "Team has fewer than 3 members; detail suppressed to prevent re-identification.",
+                "readiness_rate": None,
+                "risk_rate": None,
+                "capacity_constrained": None,
+            }
+        else:
+            summary[t] = {
+                **v,
+                "k_anon_applied": False,
+                "readiness_rate": round(100 * v["ready"] / n),
+                "risk_rate": round(100 * v["at_risk"] / n),
+            }
     return {"agent": "manager_insights", "scope": team or "all_teams", "teams": summary}

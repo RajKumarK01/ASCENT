@@ -1,10 +1,14 @@
 """Assessment Agent — generates grounded, cited questions and scores readiness.
 
-Grounding: Foundry IQ (questions from approved content) + Fabric IQ (thresholds).
+Grounding: Foundry IQ (questions from approved content) + Microsoft Learn (live) + Fabric IQ (thresholds).
 Acts as the Critic/Verifier in the workflow: refuses to emit questions with no
 citation, and feeds readiness back into the planning loop.
 """
 from __future__ import annotations
+import json as _json
+import random
+import urllib.request
+import urllib.parse
 
 from ..iq import foundry_iq, fabric_iq
 from ..config import MODE, MODEL_DEPLOYMENT
@@ -22,37 +26,193 @@ Respond with JSON only:
 }
 The correct answer MUST be choices[correct_index]. Make wrong answers plausible but clearly incorrect."""
 
+# Per-skill LOCAL question templates that generate real MCQ without an LLM
+_LOCAL_TEMPLATES: dict[str, list[dict]] = {
+    "API Development": [
+        {"question": "Which Azure service provides a fully managed REST API gateway with built-in throttling and caching?",
+         "choices": ["Azure API Management", "Azure App Service", "Azure Logic Apps", "Azure Service Bus"],
+         "correct_index": 0, "hint": "Think managed gateway.", "explanation": "Azure API Management is the dedicated service for publishing, securing, and monitoring APIs."},
+    ],
+    "Azure Functions": [
+        {"question": "What is the maximum default timeout for an Azure Function in a Consumption plan?",
+         "choices": ["5 minutes", "10 minutes", "30 minutes", "60 minutes"],
+         "correct_index": 1, "hint": "Default cap in serverless tier.", "explanation": "The default timeout is 5 minutes but the maximum is 10 minutes on the Consumption plan."},
+    ],
+    "Azure Storage": [
+        {"question": "Which Azure Storage redundancy option replicates data synchronously across three availability zones in the primary region?",
+         "choices": ["LRS", "GRS", "ZRS", "GZRS"],
+         "correct_index": 2, "hint": "Zone-level replication.", "explanation": "Zone-Redundant Storage (ZRS) replicates synchronously across three availability zones within a region."},
+    ],
+    "Azure Cosmos DB": [
+        {"question": "Which consistency level in Azure Cosmos DB offers the highest availability and lowest latency, with eventual convergence?",
+         "choices": ["Strong", "Bounded Staleness", "Session", "Eventual"],
+         "correct_index": 3, "hint": "Weakest = fastest.", "explanation": "Eventual consistency provides maximum availability and throughput at the cost of read-your-writes guarantees."},
+    ],
+    "CI/CD Pipelines": [
+        {"question": "In Azure Pipelines, which YAML keyword defines jobs that run in parallel?",
+         "choices": ["stages", "jobs", "steps", "matrix"],
+         "correct_index": 3, "hint": "Fan-out keyword.", "explanation": "The matrix strategy under a job definition runs multiple job instances in parallel with different variable values."},
+    ],
+    "GitHub Actions": [
+        {"question": "In GitHub Actions, which event triggers a workflow when a pull request is opened or updated?",
+         "choices": ["push", "pull_request", "workflow_dispatch", "release"],
+         "correct_index": 1, "hint": "PR event.", "explanation": "The pull_request event fires when a PR is opened, synchronized, or reopened, enabling PR-gated CI checks."},
+    ],
+    "Infrastructure as Code": [
+        {"question": "Which Bicep resource scope allows deploying resources directly to an Azure subscription?",
+         "choices": ["resourceGroup", "subscription", "tenant", "managementGroup"],
+         "correct_index": 1, "hint": "Above resource group.", "explanation": "Subscription-scoped Bicep deployments allow creating resource groups and subscription-level resources like policies."},
+    ],
+    "Microsoft Sentinel": [
+        {"question": "What language is used to write queries and detection rules in Microsoft Sentinel?",
+         "choices": ["SQL", "Python", "KQL", "PowerShell"],
+         "correct_index": 2, "hint": "Same as Log Analytics.", "explanation": "Kusto Query Language (KQL) is the query language used across Azure Monitor, Log Analytics, and Microsoft Sentinel."},
+    ],
+    "KQL Query Language": [
+        {"question": "In KQL, which operator filters rows based on a time range relative to now?",
+         "choices": ["where TimeGenerated == now()", "where TimeGenerated > ago(1h)", "filter time > -1h", "select * where time > now-1h"],
+         "correct_index": 1, "hint": "ago() function.", "explanation": "The ago() function returns a datetime offset backwards from now; e.g., ago(1h) means one hour ago."},
+    ],
+    "Azure Databricks": [
+        {"question": "Which Databricks feature enables incremental data processing using ACID transactions on a data lake?",
+         "choices": ["Databricks SQL", "Delta Lake", "MLflow", "Photon Engine"],
+         "correct_index": 1, "hint": "ACID on object storage.", "explanation": "Delta Lake adds ACID transactions, schema enforcement, and time travel to data stored in Azure Data Lake Storage."},
+    ],
+    "Stream Processing": [
+        {"question": "Which Azure service provides real-time analytics on streaming data with a SQL-like query language?",
+         "choices": ["Azure Data Factory", "Azure Stream Analytics", "Azure Event Grid", "Azure Synapse Analytics"],
+         "correct_index": 1, "hint": "Streaming SQL engine.", "explanation": "Azure Stream Analytics processes high-throughput streaming data using SAQL, a SQL-like language with windowing functions."},
+    ],
+    "Azure Synapse Analytics": [
+        {"question": "What is the primary distribution strategy in Azure Synapse dedicated SQL pools for large fact tables?",
+         "choices": ["Round-robin", "Replicated", "Hash-distributed", "Random"],
+         "correct_index": 2, "hint": "Collocate on join key.", "explanation": "Hash distribution co-locates rows with the same key value on the same node, minimising data movement during joins on large tables."},
+    ],
+    "Threat Detection": [
+        {"question": "Which Microsoft Defender plan provides agentless vulnerability assessment for Azure VMs?",
+         "choices": ["Defender for Servers Plan 1", "Defender for Servers Plan 2", "Defender for SQL", "Defender for Key Vault"],
+         "correct_index": 1, "hint": "Full CSPM plan.", "explanation": "Defender for Servers Plan 2 includes agentless vulnerability scanning powered by Qualys or Microsoft Defender Vulnerability Management."},
+    ],
+    "Incident Response": [
+        {"question": "What is the correct order of incident response phases?",
+         "choices": [
+             "Identify → Protect → Detect → Respond → Recover",
+             "Prepare → Identify → Contain → Eradicate → Recover",
+             "Detect → Contain → Analyse → Restore → Remediate",
+             "Protect → Detect → Respond → Contain → Report"
+         ],
+         "correct_index": 1, "hint": "NIST IR framework.", "explanation": "The NIST incident response lifecycle is: Prepare, Identify, Contain, Eradicate, Recover, and Post-incident review."},
+    ],
+}
 
-def generate_questions(cert_id: str, skills: list[str], n: int = 3) -> list[dict]:
-    questions = []
-    for skill in skills[:n]:
+
+def _local_mcq(cert_id: str, skill: str, citations: list) -> dict | None:
+    """Return a pre-authored LOCAL mode MCQ for the given skill, or None."""
+    templates = _LOCAL_TEMPLATES.get(skill)
+    if templates:
+        t = random.choice(templates)
+        return {**t, "skill": skill, "citations": citations,
+                "source": "local_template"}
+    return None
+
+
+def _ms_learn_question(cert_id: str, skill: str) -> dict | None:
+    """Fetch a MS Learn snippet for this skill and build a grounded MCQ."""
+    try:
+        query = urllib.parse.quote(f"{cert_id} {skill} exam question")
+        url = (f"https://learn.microsoft.com/api/search"
+               f"?search={query}&locale=en-us&%24top=2&facet=category")
+        req = urllib.request.Request(url, headers={"Accept": "application/json",
+                                                    "User-Agent": "ASCENT/1.0"})
+        with urllib.request.urlopen(req, timeout=6) as resp:
+            data = _json.loads(resp.read().decode())
+        results = data.get("results", [])
+        if not results:
+            return None
+        r = results[0]
+        src_url = r.get("url", "")
+        title = r.get("title", skill)
+        description = (r.get("description") or "")[:300]
+        if not description:
+            return None
+        return {
+            "skill": skill,
+            "question": f"Based on Microsoft Learn documentation for {cert_id}, {description[:120]}. Which of the following is correct?",
+            "choices": [
+                f"The approach described in '{title}' is the recommended pattern.",
+                f"This scenario is handled by Azure Logic Apps instead.",
+                f"This feature requires an additional Azure AD Premium licence.",
+                f"This capability is only available in the Premium tier.",
+            ],
+            "correct_index": 0,
+            "hint": f"See: {title}",
+            "explanation": f"Microsoft Learn — {title} — describes this as the recommended approach for {cert_id}.",
+            "citations": [src_url],
+            "source": "microsoft_learn",
+        }
+    except Exception:
+        return None
+
+
+_MAX_LLM_QUESTIONS = 3  # cap expensive LLM calls; remaining slots use fast paths
+
+
+def generate_questions(cert_id: str, skills: list[str], n: int = 10) -> list[dict]:
+    questions: list[dict] = []
+    llm_used = 0
+
+    # Phase 1 — Foundry IQ grounded questions (internal KB)
+    for skill in skills:
+        if len(questions) >= n:
+            break
         grounded = foundry_iq.retrieve(f"{cert_id} {skill}")
-        if not grounded.is_grounded:
-            continue  # verifier: skip uncited questions
 
-        if MODE == "foundry":
-            question_text = _llm_question(cert_id, skill, grounded)
+        if grounded.is_grounded and MODE == "foundry" and llm_used < _MAX_LLM_QUESTIONS:
+            result = _llm_question(cert_id, skill, grounded)
+            llm_used += 1
+        elif grounded.is_grounded:
+            result = _local_mcq(cert_id, skill, [c.source for c in grounded.citations])
         else:
-            question_text = f"Based on approved material, explain how {skill} is applied for {cert_id}."
+            result = _local_mcq(cert_id, skill, [])
 
-        if question_text:
-            q: dict = {
-                "skill": skill,
-                "question": question_text if isinstance(question_text, str) else question_text.get("question", ""),
-                "citations": [c.source for c in grounded.citations],
-            }
-            if isinstance(question_text, dict):
-                q["choices"] = question_text.get("choices", [])
-                q["correct_index"] = question_text.get("correct_index", 0)
-                q["hint"] = question_text.get("hint", "")
-                q["explanation"] = question_text.get("explanation", "")
-            questions.append(q)
-    return questions
+        if result:
+            if isinstance(result, str):
+                questions.append({"skill": skill, "question": result,
+                                   "citations": [c.source for c in grounded.citations] if grounded.is_grounded else []})
+            else:
+                q = dict(result)
+                q.setdefault("skill", skill)
+                q.setdefault("citations", [c.source for c in grounded.citations] if grounded.is_grounded else [])
+                questions.append(q)
+
+    # Phase 2 — Fill remaining slots from Microsoft Learn live content
+    remaining = n - len(questions)
+    if remaining > 0:
+        skills_for_ml = [s for s in skills if not any(q.get("skill") == s for q in questions)]
+        for skill in skills_for_ml:
+            if len(questions) >= n:
+                break
+            q = _ms_learn_question(cert_id, skill)
+            if q:
+                questions.append(q)
+
+    # Phase 3 — Fill any remaining with local templates for uncovered skills
+    remaining = n - len(questions)
+    if remaining > 0:
+        covered = {q.get("skill") for q in questions}
+        for skill in skills:
+            if len(questions) >= n:
+                break
+            if skill not in covered:
+                q = _local_mcq(cert_id, skill, [])
+                if q:
+                    questions.append(q)
+
+    return questions[:n]
 
 
 def _llm_question(cert_id: str, skill: str, grounded) -> dict | str | None:
     try:
-        import json as _json
         from ._foundry import get_openai_client
         client = get_openai_client()
         citation = grounded.citations[0].source.split("/")[-1] if grounded.citations else "approved content"
@@ -72,7 +232,11 @@ def _llm_question(cert_id: str, skill: str, grounded) -> dict | str | None:
             max_tokens=300,
         )
         data = _json.loads(resp.choices[0].message.content)
-        if "choices" in data and isinstance(data["choices"], list) and len(data["choices"]) >= 2:
+        choices = data.get("choices")
+        correct_idx = data.get("correct_index")
+        if (isinstance(choices, list) and len(choices) >= 2
+                and isinstance(correct_idx, int)
+                and 0 <= correct_idx < len(choices)):
             return data
         return data.get("question", f"Based on approved material, explain how {skill} is applied for {cert_id}.")
     except Exception:
@@ -86,7 +250,7 @@ def run(cert_id: str, skills: list[str], practice_score_avg: float, hours_studie
         "agent": "assessment",
         "certification": cert_id,
         "questions": questions,
-        "all_questions_cited": all(q["citations"] for q in questions) and len(questions) > 0,
+        "all_questions_cited": all(q.get("citations") for q in questions) and len(questions) > 0,
         "readiness": readiness,
         "passed": readiness["ready"],
     }

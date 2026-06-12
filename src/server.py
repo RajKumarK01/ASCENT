@@ -19,6 +19,7 @@ from .config import MODE
 
 PORT = int(os.environ.get("PORT", "8088"))
 _LEARNER_RE = re.compile(r"L-\d{4}")
+_MAX_INPUT_LEN = 4096
 
 
 def _configure_telemetry() -> None:
@@ -35,6 +36,11 @@ def _configure_telemetry() -> None:
 
 def handle(message: str) -> dict:
     """Map a free-text request to the orchestrator. Extract a synthetic learner id."""
+    if len(message or "") > _MAX_INPUT_LEN:
+        return {
+            "error": f"Input too long (max {_MAX_INPUT_LEN} characters).",
+            "disclaimer": "You are interacting with an AI system. Synthetic demo data only.",
+        }
     m = _LEARNER_RE.search(message or "")
     learner_id = m.group(0) if m else "L-1001"
 

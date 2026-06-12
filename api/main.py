@@ -42,4 +42,8 @@ def login(body: LoginRequest):
 @app.get("/api/health")
 def health():
     mode = os.environ.get("ASCENT_MODE", "local").strip().upper()
-    return {"status": "ok", "mode": mode}
+    return {
+        "status": "ok",
+        "mode": mode,
+        "youtube_api": bool(os.environ.get("YOUTUBE_API_KEY")),
+    }

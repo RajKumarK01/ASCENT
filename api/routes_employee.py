@@ -2,6 +2,8 @@ from __future__ import annotations
 import re
 import json
 import random
+import urllib.request
+import urllib.parse
 from datetime import datetime
 from pathlib import Path
 from fastapi import APIRouter, Depends, Query
@@ -156,20 +158,167 @@ def _path_options(user: dict) -> list[dict]:
         options[1]["certifications"].append(secondary)
     return options
 
+def _fetch_ms_learn_modules(cert_id: str) -> list[dict]:
+    """Fetch live Microsoft Learn learning path modules for a certification."""
+    try:
+        query = urllib.parse.quote(f"{cert_id} learning path training modules")
+        url = (f"https://learn.microsoft.com/api/search"
+               f"?search={query}&locale=en-us&%24top=8&facet=category")
+        req = urllib.request.Request(url, headers={"Accept": "application/json",
+                                                    "User-Agent": "ASCENT/1.0"})
+        with urllib.request.urlopen(req, timeout=6) as resp:
+            data = json.loads(resp.read().decode())
+        results = data.get("results", [])
+        modules = []
+        for r in results[:6]:
+            title = r.get("title", "")
+            src_url = r.get("url", "")
+            desc = (r.get("description") or "")[:120]
+            if title and src_url:
+                modules.append({
+                    "title": title,
+                    "url": src_url,
+                    "description": desc,
+                    "source": "microsoft_learn",
+                })
+        return modules
+    except Exception:
+        return []
+
+
 def _make_modules(cert_id: str) -> list[dict]:
     info = _cert_info(cert_id) or {}
     skills = info.get("skills", [])
-    per_module = round(info.get("recommended_hours", 20) / max(len(skills), 1), 1)
-    return [
-        {
+    total_hours = info.get("recommended_hours", 40)
+    per_skill = round(total_hours / max(len(skills), 1), 1)
+
+    import os as _os
+    use_yt_api = bool(_os.environ.get("YOUTUBE_API_KEY"))
+
+    def _yt_for_skill(skill: str) -> dict | None:
+        if use_yt_api:
+            results = _search_youtube(f"{cert_id} {skill} tutorial Microsoft Azure")
+            if results and results[0].get("video_id"):
+                return results[0]
+        # Curated fallback
+        vids = _CURATED_VIDEOS.get(skill)
+        if vids:
+            v = vids[0]
+            vid_id = v["video_id"]
+            return {
+                "video_id": vid_id,
+                "title": v["title"],
+                "channel": v["channel"],
+                "thumbnail_url": f"https://img.youtube.com/vi/{vid_id}/hqdefault.jpg",
+                "url": f"https://www.youtube.com/watch?v={vid_id}",
+            }
+        return None
+
+    # Skill-based modules from semantic seed
+    modules = []
+    for idx, skill in enumerate(skills, start=1):
+        modules.append({
             "id": f"{cert_id}-{idx}",
             "title": skill,
             "skill": skill,
             "status": "not started",
-            "target_hours": per_module,
-        }
-        for idx, skill in enumerate(skills, start=1)
-    ]
+            "target_hours": per_skill,
+            "source": "internal",
+            "url": None,
+            "description": f"Master {skill} as required for the {cert_id} certification.",
+            "youtube": _yt_for_skill(skill),
+        })
+
+    # Live Microsoft Learn modules appended after skill modules
+    ml_modules = _fetch_ms_learn_modules(cert_id)
+    for i, ml in enumerate(ml_modules, start=len(modules) + 1):
+        skill_guess = skills[i % len(skills)] if skills else cert_id
+        modules.append({
+            "id": f"{cert_id}-ml-{i}",
+            "title": ml["title"],
+            "skill": skill_guess,
+            "status": "not started",
+            "target_hours": round(total_hours / max(len(skills) + len(ml_modules), 1), 1),
+            "source": "microsoft_learn",
+            "url": ml["url"],
+            "description": ml.get("description", ""),
+            "youtube": _yt_for_skill(skill_guess),
+        })
+
+    return modules
+
+
+_CURATED_VIDEOS: dict[str, list[dict]] = {
+    "API Development":           [{"video_id": "9HFB3UG5CQ4", "title": "Azure API Management Tutorial", "channel": "Microsoft Azure"}],
+    "Azure Functions":           [{"video_id": "Vxf-rOEO1q4", "title": "Azure Functions Full Tutorial", "channel": "Microsoft Azure"}],
+    "Azure Storage":             [{"video_id": "UzTtastcBsk", "title": "Azure Storage Overview", "channel": "Microsoft Azure"}],
+    "Azure Cosmos DB":           [{"video_id": "R_Fi59j6BMo", "title": "Azure Cosmos DB in 15 minutes", "channel": "Microsoft Azure"}],
+    "Azure App Service":         [{"video_id": "4BwyqmRTrx8", "title": "Azure App Service Tutorial", "channel": "Microsoft Azure"}],
+    "Azure Key Vault":           [{"video_id": "PgujSug1ZbI", "title": "Azure Key Vault - Getting Started", "channel": "Microsoft Azure"}],
+    "CI/CD Pipelines":           [{"video_id": "NuYDAs3kNV8", "title": "Azure DevOps CI/CD Pipeline", "channel": "Microsoft Azure"}],
+    "GitHub Actions":            [{"video_id": "mFFXuXjVgkU", "title": "GitHub Actions CI/CD Tutorial", "channel": "GitHub"}],
+    "Infrastructure as Code":    [{"video_id": "t8GNpxHJGCE", "title": "Bicep Tutorial - IaC on Azure", "channel": "Microsoft Azure"}],
+    "Microsoft Sentinel":        [{"video_id": "mJCkvzdMKH4", "title": "Microsoft Sentinel Overview", "channel": "Microsoft Security"}],
+    "KQL Query Language":        [{"video_id": "P9iBPpbDjJc", "title": "KQL Tutorial for Beginners", "channel": "Microsoft Azure"}],
+    "Threat Detection":          [{"video_id": "WZHv3O53BNI", "title": "Microsoft Defender Threat Detection", "channel": "Microsoft Security"}],
+    "Azure Synapse Analytics":   [{"video_id": "p4EWBSIGe2A", "title": "Azure Synapse Analytics Tutorial", "channel": "Microsoft Azure"}],
+    "Azure Databricks":          [{"video_id": "UoB65LIe7lU", "title": "Azure Databricks Introduction", "channel": "Microsoft Azure"}],
+    "Stream Processing":         [{"video_id": "N7az1b4jWZE", "title": "Azure Stream Analytics Tutorial", "channel": "Microsoft Azure"}],
+    "Solution Architecture Design": [{"video_id": "73ML9lZ_A5c", "title": "Azure Architecture Best Practices", "channel": "Microsoft Azure"}],
+    "Azure Networking":          [{"video_id": "9DuTWSvsLXM", "title": "Azure Networking Fundamentals", "channel": "Microsoft Azure"}],
+}
+
+
+def _search_youtube(query: str) -> list[dict]:
+    """Return YouTube video recommendations.
+
+    Tries the YouTube Data API (YOUTUBE_API_KEY env var) first; falls back to
+    a curated skill-matched list so thumbnails always display.
+    """
+    import os
+    api_key = os.environ.get("YOUTUBE_API_KEY", "")
+    if api_key:
+        try:
+            encoded = urllib.parse.quote(query)
+            url = (f"https://www.googleapis.com/youtube/v3/search"
+                   f"?part=snippet&q={encoded}&type=video&maxResults=3&key={api_key}")
+            req = urllib.request.Request(url, headers={"Accept": "application/json"})
+            with urllib.request.urlopen(req, timeout=6) as resp:
+                data = json.loads(resp.read().decode())
+            videos = []
+            for item in data.get("items", [])[:3]:
+                vid_id = item["id"].get("videoId", "")
+                snippet = item.get("snippet", {})
+                if vid_id:
+                    thumb = (snippet.get("thumbnails", {}).get("high", {}).get("url")
+                             or f"https://img.youtube.com/vi/{vid_id}/hqdefault.jpg")
+                    videos.append({
+                        "video_id": vid_id,
+                        "title": snippet.get("title", ""),
+                        "channel": snippet.get("channelTitle", ""),
+                        "thumbnail_url": thumb,
+                        "url": f"https://www.youtube.com/watch?v={vid_id}",
+                    })
+            if videos:
+                return videos
+        except Exception:
+            pass
+
+    # Curated fallback — skill-key lookup from the query
+    for skill, vids in _CURATED_VIDEOS.items():
+        if skill.lower() in query.lower():
+            return [
+                {**v,
+                 "thumbnail_url": f"https://img.youtube.com/vi/{v['video_id']}/hqdefault.jpg",
+                 "url": f"https://www.youtube.com/watch?v={v['video_id']}"}
+                for v in vids
+            ]
+
+    # Generic fallback — return search link only
+    search_url = f"https://www.youtube.com/results?search_query={urllib.parse.quote(query)}"
+    return [{"video_id": "", "title": f"Search YouTube: {query[:60]}",
+             "channel": "YouTube Search", "thumbnail_url": "",
+             "url": search_url}]
 
 def _create_default_profile(user: dict) -> dict:
     cert_chain = _recommended_chain(user)
@@ -195,6 +344,30 @@ def _ensure_profile(user: dict) -> dict:
         profile = _create_default_profile(user)
         profiles[user["scope"]] = profile
         _save_profiles(profiles)
+        return profile
+
+    # Regenerate modules when empty or when the seed has grown
+    active_cert = profile.get("active_certification", "")
+    current_modules = profile.get("modules", [])
+    seed_skills_count = len((_cert_info(active_cert) or {}).get("skills", []))
+    internal_count = sum(1 for m in current_modules if m.get("source") != "microsoft_learn")
+    import os as _os
+    has_youtube = any("youtube" in m for m in current_modules)
+    has_yt_api = bool(_os.environ.get("YOUTUBE_API_KEY"))
+    # Regenerate if: no modules, seed grew, youtube field missing, or API key appeared since last gen
+    youtube_upgraded = has_yt_api and has_youtube and all(
+        not m.get("youtube", {}).get("video_id") for m in current_modules
+    )
+    needs_regen = (not current_modules) or (seed_skills_count > 0 and internal_count < seed_skills_count) or not has_youtube or youtube_upgraded
+    if needs_regen and active_cert:
+        profile["modules"] = _make_modules(active_cert)
+        profile["progress"] = {
+            "completed": sum(1 for m in profile["modules"] if m.get("status") == "complete"),
+            "total": len(profile["modules"]),
+        }
+        profiles[user["scope"]] = profile
+        _save_profiles(profiles)
+
     return profile
 
 def _save_profile(user: dict, profile: dict) -> dict:
@@ -453,6 +626,13 @@ def _llm_interpret_path(description: str, cert_list: str, mode: str, model: str)
 @router.post("/chat")
 def chat(body: ChatRequest, user: dict = Depends(_employee)):
     """Free-text chat: interpret intent, run the orchestrator, return a structured reply."""
+    if len(body.message or "") > 1000:
+        return {
+            "message": (body.message or "")[:80] + "…",
+            "reply": "Message too long (max 1000 characters). Please shorten your question.",
+            "result": {},
+            "intent": {},
+        }
     intent = _parse_intent(body.message)
     result = run_for_learner(user["scope"], weeks=intent["weeks"])
 

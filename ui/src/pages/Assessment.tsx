@@ -89,6 +89,11 @@ export function Assessment() {
       </Card>
 
       <Card title="Practice questions">
+        {questions.length > 0 && questions.every((q: any) => !q.choices?.length) && (
+          <div className="mb-4 rounded-xl border border-yellow-600/40 bg-yellow-600/10 px-4 py-3 text-sm text-yellow-400">
+            Assessment questions could not be generated in interactive mode — check agent logs or switch to Foundry mode for full MCQ support.
+          </div>
+        )}
         {questions.length === 0 ? (
           <div className="text-sm text-github-muted italic">No grounded questions available — knowledge base returned no content for these skills.</div>
         ) : (

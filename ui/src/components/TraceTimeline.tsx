@@ -8,8 +8,13 @@ const ICONS: Record<string, string> = {
   'role:study_planner': '📅',
   'role:assessment': '✅',
   verifier: '🔍',
+  reflect: '🧠',
   'self-reflect': '🔄',
   result: '🎯',
+  'tool:microsoft_docs_search': '🔍',
+  'tool:microsoft_docs_fetch': '📄',
+  'tool:youtube_search': '▶️',
+  'tool:error': '⚠️',
 }
 
 function stepIcon(line: string) {
@@ -19,10 +24,12 @@ function stepIcon(line: string) {
 
 function stepColor(line: string) {
   if (line.includes('[verifier]')) return 'border-github-yellow/50 bg-github-yellow/10'
+  if (line.includes('[reflect]')) return 'border-purple-500/50 bg-purple-500/10'
   if (line.includes('[self-reflect]')) return 'border-github-purple/50 bg-github-purple/10'
   if (line.includes('READY ->')) return 'border-github-green/50 bg-github-green/10'
   if (line.includes('NOT READY')) return 'border-github-red/50 bg-github-red/10'
   if (line.includes('[concurrent]')) return 'border-github-blue/50 bg-github-blue/10'
+  if (line.includes('[tool:')) return 'border-orange-500/50 bg-orange-500/10'
   return 'border-github-border bg-github-surface'
 }
 

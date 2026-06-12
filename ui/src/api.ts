@@ -36,5 +36,6 @@ export const api = {
   updateProfile: (body: {path:string;certification?:string}) => request<any>('/employee/profile', { method: 'POST', body: JSON.stringify(body) }),
   completeModule: (moduleId: string) => request<any>(`/employee/study/module/${encodeURIComponent(moduleId)}/complete`, { method: 'POST', body: JSON.stringify({}) }),
   interpretPath: (description: string) => request<{certification:string;cert_title:string;path:string;reasoning:string;skills:string[];recommended_hours:number;available_certifications:string[]}>('/employee/path/interpret', { method: 'POST', body: JSON.stringify({ description }) }),
+  youtube:     (q: string) => request<{query:string;videos:{video_id:string;title:string;channel:string;thumbnail_url:string;url:string}[]}>(`/employee/study/youtube?q=${encodeURIComponent(q)}`),
   post:        <T,>(path: string, body: any) => request<T>(path, { method: 'POST', body: JSON.stringify(body) }),
 }

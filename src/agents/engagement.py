@@ -18,7 +18,7 @@ def run(learner_id: str) -> dict:
     if not signal:
         return {"agent": "engagement", "learner_id": learner_id,
                 "window": None, "note": "No work signal available; using default cadence."}
-    window = work_iq.study_window(signal)
+    window = work_iq.study_window(signal, learner_id=learner_id)
     return {
         "agent": "engagement",
         "learner_id": learner_id,

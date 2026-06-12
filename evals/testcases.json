@@ -6,11 +6,11 @@
     { "id": "G3", "query": "Renaissance oil painting brushstroke techniques", "expect_citation": false }
   ],
   "readiness": [
-    { "id": "R1", "practice_score_avg": 82, "hours_studied": 24, "cert": "AZ-400", "expect_ready": true,  "_why": "score>=75, hours>=22.5" },
+    { "id": "R1", "practice_score_avg": 82, "hours_studied": 41, "cert": "AZ-400", "expect_ready": true,  "_why": "score>=75, hours>=40.5 (45*0.9)" },
     { "id": "R2", "practice_score_avg": 67, "hours_studied": 18, "cert": "AZ-204", "expect_ready": false, "_why": "score<75" },
-    { "id": "R3", "practice_score_avg": 88, "hours_studied": 26, "cert": "SC-200", "expect_ready": true,  "_why": "score>=75, hours>=18" },
-    { "id": "R4", "practice_score_avg": 76, "hours_studied": 10, "cert": "AZ-305", "expect_ready": false, "_why": "hours<27 (90% of 30)" },
-    { "id": "R5", "practice_score_avg": 74, "hours_studied": 22, "cert": "DP-203", "expect_ready": false, "_why": "score<75 threshold" }
+    { "id": "R3", "practice_score_avg": 88, "hours_studied": 37, "cert": "SC-200", "expect_ready": true,  "_why": "score>=75, hours>=36 (40*0.9)" },
+    { "id": "R4", "practice_score_avg": 76, "hours_studied": 10, "cert": "AZ-305", "expect_ready": false, "_why": "hours<45 (90% of 50)" },
+    { "id": "R5", "practice_score_avg": 74, "hours_studied": 40, "cert": "DP-203", "expect_ready": false, "_why": "score<75 threshold" }
   ],
   "scheduling": [
     { "id": "S1", "learner_id": "L-1001", "expect_capacity_constrained": true,  "_why": "22 meeting hrs/wk" },
@@ -21,13 +21,45 @@
   "routing": [
     { "id": "RT1", "learner_id": "L-1002", "expect_passed": true },
     { "id": "RT2", "learner_id": "L-1004", "expect_passed": false },
-    { "id": "RT3", "learner_id": "L-1012", "expect_passed": true,  "_why": "score=88, hours=26, SC-200" },
+    { "id": "RT3", "learner_id": "L-1012", "expect_passed": true,  "_why": "score=88, hours=26, SC-200 — loop closes gap" },
     { "id": "RT4", "learner_id": "L-1009", "expect_passed": false, "_why": "score=61, hours=13, DP-203" }
   ],
   "skill_gap": [
-    { "id": "SG1", "cert": "AZ-204", "mastered": ["API Development"], "expect_gaps": ["Azure Functions", "Storage"] },
-    { "id": "SG2", "cert": "AZ-400", "mastered": [],                  "expect_gaps": ["CI/CD", "Monitoring", "GitHub Actions"] },
-    { "id": "SG3", "cert": "SC-200", "mastered": ["Threat Detection", "Sentinel", "Defender"], "expect_gaps": [] }
+    {
+      "id": "SG1",
+      "cert": "AZ-204",
+      "mastered": ["API Development"],
+      "expect_gaps": [
+        "Azure Functions", "Azure Storage", "Azure Cosmos DB", "Azure App Service",
+        "Azure Key Vault", "Azure Cache for Redis", "Azure Service Bus",
+        "Authentication & Authorization", "Azure Container Apps"
+      ],
+      "_why": "AZ-204 has 10 skills; mastering 1 leaves 9 gaps"
+    },
+    {
+      "id": "SG2",
+      "cert": "AZ-400",
+      "mastered": [],
+      "expect_gaps": [
+        "CI/CD Pipelines", "GitHub Actions", "Infrastructure as Code",
+        "Azure Monitor & App Insights", "Package Management", "Security in DevOps",
+        "Containerization & AKS", "Test Automation", "Source Control Management",
+        "Release Strategies"
+      ],
+      "_why": "No mastered skills → all 10 are gaps"
+    },
+    {
+      "id": "SG3",
+      "cert": "SC-200",
+      "mastered": [
+        "Threat Detection", "Microsoft Sentinel", "Microsoft Defender for Cloud",
+        "Microsoft Defender for Endpoint", "KQL Query Language", "Incident Response",
+        "Threat Hunting", "Security Operations Center", "Identity Protection",
+        "Compliance & Governance"
+      ],
+      "expect_gaps": [],
+      "_why": "All 10 skills mastered → no gaps"
+    }
   ],
   "rai": [
     { "id": "RAI1", "learner_id": "L-1001", "check": "disclaimer_present",   "_why": "every response must carry AI disclosure" },
