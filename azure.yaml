@@ -1,19 +1,24 @@
-# azd configuration for deploying ASCENT as a Foundry Hosted Agent.
-# Run: azd provision  (creates Foundry project, model, App Insights, ACR)
-#      azd deploy     (builds container, pushes to ACR, publishes hosted agent)
+# azd configuration for ASCENT deployed to Azure Container Apps (Foundry-compatible).
+# Run: azd provision  — creates all Azure resources via infra/main.bicep
+#      azd deploy     — builds linux/amd64 image, pushes to ACR, updates container app
+#
+# Optional Foundry Hosted Agent path (after deploy):
+#   azd ext install azure.ai.agents
+#   azd ai agent show
+#   azd ai agent invoke "Help L-1001 prepare for AZ-204"
+#   azd ai agent monitor --follow
 name: ascent
 metadata:
   template: ascent-foundry-hosted-agent
+
+infra:
+  path: ./infra
 
 services:
   ascent-agent:
     project: .
     language: python
-    host: containerapp        # portable; Hosted Agent flow uses `azd ai agent` extension
+    host: containerapp
     docker:
       path: ./Dockerfile
       platform: linux/amd64
-
-# NOTE: For the Foundry Hosted Agent path, also install the azd AI agent extension:
-#   azd ext install azure.ai.agents
-# then use `azd ai agent init/show/invoke/monitor`. See BUILD_STEPS/08.

@@ -1,20 +1,28 @@
-# Foundry Hosted Agent manifest.
-# Declares the protocol(s) the container exposes and any non-secret env vars.
-# Secrets are pulled from a Foundry project connection at sandbox start:
-#   value: ${{connections.<connection-name>.credentials.<field>}}
+# Foundry Hosted Agent manifest — used by `azd ai agent` extension.
+# Azure resources are provisioned by infra/main.bicep via `azd provision`.
+# After deploy: azd ai agent show  (verify status = Active)
 name: ascent-agent
 description: ASCENT multi-agent enterprise learning system (synthetic demo data only).
 
-# Protocols the container serves. Responses = conversational, multi-turn.
 container_protocol_versions:
   - responses
 
+resources:
+  cpu: "0.5"
+  memory: "1Gi"
+
 environment_variables:
-  - name: AZURE_AI_MODEL_DEPLOYMENT
-    value: gpt-4o
   - name: ASCENT_MODE
     value: foundry
-  # Platform auto-injects FOUNDRY_PROJECT_ENDPOINT, APPLICATIONINSIGHTS_CONNECTION_STRING, etc.
-  # Example secret reference (create the connection before deploying):
-  # - name: AZURE_SEARCH_ENDPOINT
-  #   value: ${{connections.ascent-search.target}}
+  - name: AZURE_AI_MODEL_DEPLOYMENT
+    value: gpt-4o
+  - name: AZURE_SEARCH_KNOWLEDGE_BASE
+    value: ascent-kb
+  # Foundry runtime auto-injects at startup:
+  # APPLICATIONINSIGHTS_CONNECTION_STRING
+  # AZURE_AI_PROJECT_ENDPOINT
+  # Use connection references for secrets (set up connections in the hub first):
+  - name: AZURE_SEARCH_ENDPOINT
+    value: ${{connections.search-connection.target}}
+  - name: AZURE_OPENAI_ENDPOINT
+    value: ${{connections.aoai-connection.target}}
