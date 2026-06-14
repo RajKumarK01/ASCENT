@@ -21,6 +21,10 @@ A multi-agent **enterprise learning system** for the Microsoft Agents League —
 | Take-assessment prompt with readiness/score gated until taken, and the contribution heatmap with **scheduled study (purple) + assessment (amber)** overlay. | Grounded multiple-choice questions with **citation chips** and a readiness verdict (pass threshold, score/hours gap). |
 | ![Dashboard](docs/media/Dashboard.jpg) | ![Assessment](docs/media/Assessment.jpg) |
 
+**Registered in Microsoft Foundry** — the entry `ascent-orchestrator` (**hosted** agent) plus the five specialist **prompt** agents, each versioned and invokable by name.
+
+![Foundry agents](docs/media/FoundryScreenshot.jpg)
+
 ---
 
 ## What it does
