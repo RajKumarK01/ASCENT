@@ -9,6 +9,20 @@ A multi-agent **enterprise learning system** for the Microsoft Agents League —
 
 ---
 
+## Screens
+
+| Agent reasoning trace | Study Plan (scheduled) |
+|---|---|
+| Planner→Executor route, tool calls (Microsoft Learn + YouTube), Critic/Verifier readiness gate, and the self-reflection loop. | Dynamic week-by-week milestones with objectives, **scheduled dates**, the Work IQ day anchor, and the *Add study plan to Outlook* button. |
+| ![Agent reasoning trace](docs/media/AgentResoningTrace.jpg) | ![Study Plan](docs/media/StudyPlan-1.jpg) |
+
+| Dashboard + heatmap | Assessment (grounded) |
+|---|---|
+| Take-assessment prompt with readiness/score gated until taken, and the contribution heatmap with **scheduled study (purple) + assessment (amber)** overlay. | Grounded multiple-choice questions with **citation chips** and a readiness verdict (pass threshold, score/hours gap). |
+| ![Dashboard](docs/media/Dashboard.jpg) | ![Assessment](docs/media/Assessment.jpg) |
+
+---
+
 ## What it does
 
 A learner picks a certification goal (a recommended path or a custom one such as **SC-200**). The system then:
