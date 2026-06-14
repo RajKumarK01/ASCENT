@@ -20,10 +20,6 @@ class RegenerateRequest(BaseModel):
     weeks: int = 4
 
 
-class ChatRequest(BaseModel):
-    message: str
-
-
 class ProfileUpdateRequest(BaseModel):
     path: str
     certification: str | None = None
@@ -31,3 +27,13 @@ class ProfileUpdateRequest(BaseModel):
 
 class PathInterpretRequest(BaseModel):
     description: str
+
+
+class AssessmentSubmitRequest(BaseModel):
+    score_pct: int
+    correct: int | None = None
+    total: int | None = None
+
+
+class ScheduleCalendarRequest(BaseModel):
+    weeks: int = 4

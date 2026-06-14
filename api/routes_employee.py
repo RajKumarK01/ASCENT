@@ -1,7 +1,7 @@
 from __future__ import annotations
-import re
 import json
 import random
+import re
 import urllib.request
 import urllib.parse
 from datetime import datetime
@@ -9,15 +9,17 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, Query
 
 from .deps import current_user, require_role
-from .models import RegenerateRequest, ChatRequest, ProfileUpdateRequest, PathInterpretRequest
+from .models import (
+    RegenerateRequest, ProfileUpdateRequest, PathInterpretRequest, AssessmentSubmitRequest,
+    ScheduleCalendarRequest,
+)
+from .scheduling import build_schedule
 from .agent_client import run_for_learner
+from src.integrations import graph_calendar
 
 router = APIRouter(prefix="/api", tags=["employee"])
 
 _employee = require_role("employee")
-
-_WEEKS_RE  = re.compile(r'(\d+)[\s\-]*week', re.I)
-_FOCUS_RE  = re.compile(r'focus\s+on\s+([A-Za-z/ ]{3,30})', re.I)
 
 # Path to persistent study data files
 CONTRIBUTIONS_FILE = Path(__file__).parent.parent / "data" / "study_contributions.json"
@@ -186,6 +188,39 @@ def _fetch_ms_learn_modules(cert_id: str) -> list[dict]:
         return []
 
 
+# Process-level cache so repeated profile regenerations don't re-hit the Learn API.
+_MS_LEARN_LINK_CACHE: dict[tuple[str, str], list[dict]] = {}
+
+
+def _ms_learn_links(cert_id: str, skill: str, top: int = 3) -> list[dict]:
+    """Return real Microsoft Learn DEEP links for a (cert, skill) pair.
+
+    Hits the keyless Microsoft Learn search API and returns the actual module/doc
+    URLs (not a generic /search?terms= page). Cached + resilient (→ [] on failure).
+    """
+    key = (cert_id, skill)
+    if key in _MS_LEARN_LINK_CACHE:
+        return _MS_LEARN_LINK_CACHE[key]
+    links: list[dict] = []
+    try:
+        query = urllib.parse.quote(f"{cert_id} {skill}")
+        url = (f"https://learn.microsoft.com/api/search"
+               f"?search={query}&locale=en-us&%24top={min(top, 5)}&facet=category")
+        req = urllib.request.Request(url, headers={"Accept": "application/json",
+                                                   "User-Agent": "ASCENT/1.0"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode())
+        for r in data.get("results", [])[:top]:
+            title = (r.get("title") or "").strip()
+            src_url = (r.get("url") or r.get("displayUrl") or "").strip()
+            if title and src_url:
+                links.append({"label": title[:80], "url": src_url})
+    except Exception:
+        links = []
+    _MS_LEARN_LINK_CACHE[key] = links
+    return links
+
+
 def _make_modules(cert_id: str) -> list[dict]:
     info = _cert_info(cert_id) or {}
     skills = info.get("skills", [])
@@ -196,27 +231,30 @@ def _make_modules(cert_id: str) -> list[dict]:
     use_yt_api = bool(_os.environ.get("YOUTUBE_API_KEY"))
 
     def _yt_for_skill(skill: str) -> dict | None:
+        # 1) Live YouTube Data API — freshest, skill-specific (needs key + quota).
         if use_yt_api:
             results = _search_youtube(f"{cert_id} {skill} tutorial Microsoft Azure")
             if results and results[0].get("video_id"):
                 return results[0]
-        # Curated fallback
+        # 2) Public YouTube search page — real, skill-specific, no API quota.
+        scraped = _scrape_youtube(f"{cert_id} {skill} tutorial")
+        if scraped:
+            return scraped
+        # 3) Curated map — offline-safe, hand-picked.
         vids = _CURATED_VIDEOS.get(skill)
         if vids:
-            v = vids[0]
-            vid_id = v["video_id"]
-            return {
-                "video_id": vid_id,
-                "title": v["title"],
-                "channel": v["channel"],
-                "thumbnail_url": f"https://img.youtube.com/vi/{vid_id}/hqdefault.jpg",
-                "url": f"https://www.youtube.com/watch?v={vid_id}",
-            }
+            return _video_dict(vids[0]["video_id"], vids[0]["title"], vids[0]["channel"])
+        # 4) Final floor: the certification overview video (always a real, verified link),
+        #    so a module never falls back to an empty "Search on YouTube" tile.
+        ov = _CERT_OVERVIEW_VIDEOS.get(cert_id)
+        if ov:
+            return _video_dict(ov["video_id"], ov["title"], ov["channel"])
         return None
 
     # Skill-based modules from semantic seed
     modules = []
     for idx, skill in enumerate(skills, start=1):
+        resources = _ms_learn_links(cert_id, skill)
         modules.append({
             "id": f"{cert_id}-{idx}",
             "title": skill,
@@ -224,7 +262,9 @@ def _make_modules(cert_id: str) -> list[dict]:
             "status": "not started",
             "target_hours": per_skill,
             "source": "internal",
-            "url": None,
+            # Primary "Open on Microsoft Learn" link = the top real deep link for the skill.
+            "url": resources[0]["url"] if resources else None,
+            "resources": resources,
             "description": f"Master {skill} as required for the {cert_id} certification.",
             "youtube": _yt_for_skill(skill),
         })
@@ -232,7 +272,8 @@ def _make_modules(cert_id: str) -> list[dict]:
     # Live Microsoft Learn modules appended after skill modules
     ml_modules = _fetch_ms_learn_modules(cert_id)
     for i, ml in enumerate(ml_modules, start=len(modules) + 1):
-        skill_guess = skills[i % len(skills)] if skills else cert_id
+        # Map each ML module to a skill by 0-based position (not an off-by arbitrary offset).
+        skill_guess = skills[(i - len(skills) - 1) % len(skills)] if skills else cert_id
         modules.append({
             "id": f"{cert_id}-ml-{i}",
             "title": ml["title"],
@@ -267,6 +308,60 @@ _CURATED_VIDEOS: dict[str, list[dict]] = {
     "Solution Architecture Design": [{"video_id": "73ML9lZ_A5c", "title": "Azure Architecture Best Practices", "channel": "Microsoft Azure"}],
     "Azure Networking":          [{"video_id": "9DuTWSvsLXM", "title": "Azure Networking Fundamentals", "channel": "Microsoft Azure"}],
 }
+
+# Final per-certification fallback video (real, oEmbed-verified). Used when neither the
+# live API, the scrape, nor a skill-specific curated entry yields a video — guarantees
+# every module shows a real thumbnail rather than an empty search placeholder.
+_CERT_OVERVIEW_VIDEOS: dict[str, dict] = {
+    "AZ-204": {"video_id": "anef67apIEA", "title": "AZ-204 Full Course — Azure Developer Certification", "channel": "A Guide to Cloud & AI"},
+    "AZ-305": {"video_id": "Dir7pH5F4Lc", "title": "Azure Solutions Architect (AZ-305) — Overview", "channel": "DecisionForest"},
+    "AZ-400": {"video_id": "11KT1hPNkY4", "title": "Azure DevOps Engineer Expert (AZ-400) — Full Course", "channel": "freeCodeCamp.org"},
+    "DP-203": {"video_id": "Gh7v6XCHNxU", "title": "Azure Data Engineering (DP-203) — Step-by-Step Guide", "channel": "Darshil Parmar"},
+    "SC-200": {"video_id": "wdRlM_CvUA4", "title": "How to Pass SC-200 — Security Operations Analyst", "channel": "CloudThat"},
+}
+
+
+def _video_dict(vid_id: str, title: str, channel: str) -> dict:
+    """Standard video card shape (thumbnail + watch URL derived from the id)."""
+    return {
+        "video_id": vid_id,
+        "title": title,
+        "channel": channel,
+        "thumbnail_url": f"https://img.youtube.com/vi/{vid_id}/hqdefault.jpg",
+        "url": f"https://www.youtube.com/watch?v={vid_id}",
+    }
+
+
+# Process-level cache so repeated profile regenerations don't re-scrape the same query.
+_YT_SCRAPE_CACHE: dict[str, dict | None] = {}
+
+
+def _scrape_youtube(query: str) -> dict | None:
+    """Return a real video for a query by reading the public YouTube search results
+    page (video filter). No API key or quota required. Cached + resilient (→ None)."""
+    if query in _YT_SCRAPE_CACHE:
+        return _YT_SCRAPE_CACHE[query]
+    result: dict | None = None
+    try:
+        url = ("https://www.youtube.com/results?search_query="
+               + urllib.parse.quote(query) + "&sp=EgIQAQ%253D%253D")  # sp = filter: videos only
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0", "Accept-Language": "en-US,en"})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            html = resp.read().decode("utf-8", "ignore")
+        ids = re.findall(r'"videoId":"([A-Za-z0-9_-]{11})"', html)
+        titles = re.findall(r'"title":\{"runs":\[\{"text":"(.*?)"\}', html)
+        if ids:
+            title = titles[0] if titles else "YouTube tutorial"
+            try:  # decode \uXXXX / \/ escapes from the raw JSON-in-HTML
+                title = json.loads(f'"{title}"')
+            except Exception:
+                pass
+            result = _video_dict(ids[0], title, "YouTube")
+    except Exception:
+        result = None
+    _YT_SCRAPE_CACHE[query] = result
+    return result
 
 
 def _search_youtube(query: str) -> list[dict]:
@@ -335,6 +430,8 @@ def _create_default_profile(user: dict) -> dict:
         "progress": {"completed": 0, "total": len(modules)},
         "needs_selection": True,
         "message": "Welcome! Choose your first study path to personalise your journey.",
+        # Readiness/assessment scores start empty — the learner must take the assessment.
+        "assessment": {"taken": False, "score_pct": 0, "date": None, "attempts": 0},
     }
 
 def _ensure_profile(user: dict) -> dict:
@@ -345,6 +442,12 @@ def _ensure_profile(user: dict) -> dict:
         profiles[user["scope"]] = profile
         _save_profiles(profiles)
         return profile
+
+    # Migrate older cached profiles that predate the assessment field.
+    if "assessment" not in profile:
+        profile["assessment"] = {"taken": False, "score_pct": 0, "date": None, "attempts": 0}
+        profiles[user["scope"]] = profile
+        _save_profiles(profiles)
 
     # Regenerate modules when empty or when the seed has grown
     active_cert = profile.get("active_certification", "")
@@ -449,6 +552,9 @@ def _update_profile_path(user: dict, path: str, certification: str | None = None
         profile["certification_chain"] = [chosen_cert]
         profile["path_title"] = "Custom certification journey"
     profile["selected_path"] = path
+    # Switching certification invalidates the prior assessment score — require a re-take.
+    if chosen_cert != profile.get("active_certification"):
+        profile["assessment"] = {"taken": False, "score_pct": 0, "date": None, "attempts": 0}
     profile["active_certification"] = chosen_cert
     profile["modules"] = _make_modules(chosen_cert)
     profile["needs_selection"] = False
@@ -468,17 +574,6 @@ def _complete_module(user: dict, module_id: str) -> dict:
             return profile
     return _save_profile(user, profile)
 
-def _parse_intent(message: str, default_weeks: int = 4) -> dict:
-    """Extract weeks and focus-skill hints from free-text."""
-    weeks_match = _WEEKS_RE.search(message)
-    weeks = int(weeks_match.group(1)) if weeks_match else default_weeks
-    weeks = max(1, min(16, weeks))
-
-    focus_match = _FOCUS_RE.search(message)
-    focus_skill = focus_match.group(1).strip() if focus_match else None
-
-    return {"weeks": weeks, "focus_skill": focus_skill}
-
 
 @router.get("/me")
 def me(user: dict = Depends(current_user)):
@@ -486,43 +581,103 @@ def me(user: dict = Depends(current_user)):
             "role": user["role"], "scope": user["scope"]}
 
 
+def _score_override(profile: dict) -> float | None:
+    """The learner's actual taken-assessment score, or None if not taken yet."""
+    asmt = profile.get("assessment") or {}
+    return float(asmt["score_pct"]) if asmt.get("taken") else None
+
+
 @router.get("/plan")
 def get_plan(weeks: int = Query(default=4, ge=1, le=16),
              user: dict = Depends(_employee)):
-    result = run_for_learner(user["scope"], weeks=weeks)
-    result["profile"] = _ensure_profile(user)
+    profile = _ensure_profile(user)
+    result = run_for_learner(user["scope"], weeks=weeks,
+                             cert_override=profile.get("active_certification"),
+                             score_override=_score_override(profile))
+    result["profile"] = profile
+    # Project milestones onto concrete dates (preferred day/slot from work signals)
+    # so the UI can show when each study block + assessment is scheduled.
+    plan = result.get("study_plan", {})
+    window = (result.get("engagement", {}) or {}).get("window", {}) or {}
+    sched = build_schedule(plan, window)
+    plan["schedule"] = sched["events"]
+    plan["milestones"] = sched["milestones"]
     # Expand assessment questions to MCQ format so Assessment page needs no separate call
     cert_id = result.get("curator", {}).get("certification", "")
     asmt = result.get("assessment", {})
     asmt["questions"] = [
         _make_mcq_question(q, cert_id) for q in asmt.get("questions", [])
     ]
-    _record_activity(user, "assessment_taken", 1)
-    if result.get("passed"):
-        _record_activity(user, "assessment_passed", 1)
     return result
 
 
 @router.post("/plan/regenerate")
 def regenerate_plan(body: RegenerateRequest, user: dict = Depends(_employee)):
-    result = run_for_learner(user["scope"], weeks=body.weeks)
-    result["profile"] = _ensure_profile(user)
+    profile = _ensure_profile(user)
+    result = run_for_learner(user["scope"], weeks=body.weeks,
+                             cert_override=profile.get("active_certification"),
+                             score_override=_score_override(profile))
+    result["profile"] = profile
     return result
 
 
 @router.get("/assessment")
 def get_assessment(user: dict = Depends(_employee)):
-    result = run_for_learner(user["scope"])
+    profile = _ensure_profile(user)
+    result = run_for_learner(user["scope"],
+                             cert_override=profile.get("active_certification"),
+                             score_override=_score_override(profile))
     assessment = result.get("assessment", {})
-    _record_activity(user, "assessment_taken", 1)
-    if result.get("passed"):
-        _record_activity(user, "assessment_passed", 1)
     assessment["questions"] = [
         _make_mcq_question(q, result.get("curator", {}).get("certification", ""))
         for q in assessment.get("questions", [])
     ]
-    assessment["profile"] = _ensure_profile(user)
+    assessment["profile"] = profile
     return assessment
+
+
+@router.post("/employee/assessment/submit")
+def submit_assessment(body: AssessmentSubmitRequest, user: dict = Depends(_employee)):
+    """Persist the learner's ACTUAL assessment result so readiness becomes real."""
+    profile = _ensure_profile(user)
+    score = max(0, min(100, int(body.score_pct)))
+    prior = profile.get("assessment") or {}
+    profile["assessment"] = {
+        "taken": True,
+        "score_pct": score,
+        "date": _to_date_key(datetime.now()),
+        "attempts": int(prior.get("attempts", 0)) + 1,
+        "correct": body.correct,
+        "total": body.total,
+    }
+    _save_profile(user, profile)
+    _record_activity(user, "assessment_taken", 1, allow_duplicate=True)
+    if score >= 75:
+        _record_activity(user, "assessment_passed", 1)
+    return profile
+
+
+@router.post("/employee/calendar/schedule")
+def schedule_calendar(body: ScheduleCalendarRequest, user: dict = Depends(_employee)):
+    """Create study/assessment events on the configured Outlook mailbox (cross-tenant,
+    app-only). Falls back to a downloadable .ics when Graph isn't configured."""
+    profile = _ensure_profile(user)
+    result = run_for_learner(user["scope"], weeks=body.weeks,
+                             cert_override=profile.get("active_certification"),
+                             score_override=_score_override(profile))
+    plan = result.get("study_plan", {})
+    window = (result.get("engagement", {}) or {}).get("window", {}) or {}
+    events = build_schedule(plan, window)["events"]
+    if graph_calendar.is_configured():
+        outcome = graph_calendar.create_events(events)
+        return {"mode": "graph", "events": events, **outcome}
+    cert = plan.get("certification", "plan")
+    return {
+        "mode": "ics",
+        "events": events,
+        "ics": graph_calendar.build_ics(events),
+        "filename": f"ascent-{cert}-study-plan.ics",
+    }
 
 
 @router.get("/employee/profile")
@@ -620,62 +775,6 @@ def _llm_interpret_path(description: str, cert_list: str, mode: str, model: str)
         "certification": best if scores[best] > 0 else "AZ-204",
         "path": "custom",
         "reasoning": f"Based on your description, {best} aligns best with your stated goals.",
-    }
-
-
-@router.post("/chat")
-def chat(body: ChatRequest, user: dict = Depends(_employee)):
-    """Free-text chat: interpret intent, run the orchestrator, return a structured reply."""
-    if len(body.message or "") > 1000:
-        return {
-            "message": (body.message or "")[:80] + "…",
-            "reply": "Message too long (max 1000 characters). Please shorten your question.",
-            "result": {},
-            "intent": {},
-        }
-    intent = _parse_intent(body.message)
-    result = run_for_learner(user["scope"], weeks=intent["weeks"])
-
-    # Build a plain-language reply summarising the result
-    plan   = result.get("study_plan", {})
-    asmt   = result.get("assessment", {})
-    r      = asmt.get("readiness", {})
-    passed = result.get("passed", False)
-    loops  = result.get("loops", 0)
-
-    if "help" in body.message.lower() or "prepare" in body.message.lower() or not body.message.strip():
-        reply = (
-            f"I've reviewed {user['scope']}'s learning profile for "
-            f"{result.get('curator', {}).get('certification', 'your certification')}. "
-        )
-    elif "ready" in body.message.lower() or "exam" in body.message.lower():
-        reply = f"Readiness check for {user['scope']}: "
-    elif intent["focus_skill"]:
-        reply = f"I've built a plan focusing on {intent['focus_skill']}. "
-    else:
-        reply = "Here's an updated learning plan based on your request. "
-
-    if passed:
-        reply += (
-            f"Good news — you're on track to be exam-ready in {plan.get('weeks')} weeks "
-            f"({plan.get('hours_per_week')}h/week). "
-        )
-        if result.get("next_step"):
-            reply += f"After this certification, consider {result['next_step']}."
-    else:
-        reply += (
-            f"You need {r.get('hours_gap', 0)}h more study and "
-            f"+{r.get('score_gap', 0)}% on practice scores. "
-            f"I've extended your plan to {plan.get('weeks')} weeks to close the gap."
-        )
-        if loops:
-            reply += f" The planner ran {loops} reflection loop(s) to find the best path."
-
-    return {
-        "message": body.message,
-        "reply": reply,
-        "result": result,
-        "intent": intent,
     }
 
 

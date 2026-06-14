@@ -7,12 +7,17 @@ from __future__ import annotations
 from collections import defaultdict
 
 from ..iq import fabric_iq, work_iq
-from ..config import learners
+from ..config import learners, MODE
 
 SYSTEM_PROMPT = """You are the Manager Insights Agent.
-Summarise learning progress by team, role, or certification. Highlight capacity-
-constrained teams and likely exam-risk areas. Present aggregate insights only —
-never expose individual personal data or another person's schedule."""
+You receive already-aggregated, k-anonymised team statistics (no individual data).
+Reason about them and return JSON only:
+{
+  "narrative": "2-3 sentences a manager can act on — where the team stands and the biggest lever",
+  "risks": ["<short, prioritised risk callout>", "..."]
+}
+Discuss only aggregates (readiness rate, risk rate, capacity). Never name or
+imply an individual. Be specific and decision-useful, not generic."""
 
 
 def run(team: str | None = None) -> dict:
@@ -51,4 +56,36 @@ def run(team: str | None = None) -> dict:
                 "readiness_rate": round(100 * v["ready"] / n),
                 "risk_rate": round(100 * v["at_risk"] / n),
             }
-    return {"agent": "manager_insights", "scope": team or "all_teams", "teams": summary}
+    result = {"agent": "manager_insights", "scope": team or "all_teams", "teams": summary}
+
+    if MODE == "foundry":
+        reasoned = _reason_insights(summary, team or "all_teams")
+        if reasoned:
+            result.update(reasoned)  # narrative + risks
+    return result
+
+
+def _reason_insights(summary: dict, scope: str) -> dict | None:
+    """FOUNDRY: turn aggregates into a manager narrative + risk callouts. No PII."""
+    from ._reason import reason_or_delegate
+    import json as _json
+
+    # Only the non-suppressed teams carry usable aggregates.
+    visible = {t: v for t, v in summary.items() if not v.get("suppressed")}
+    if not visible:
+        return None
+    user = (
+        f"Scope: {scope}. Aggregated team stats (k-anonymised, no individuals):\n"
+        f"{_json.dumps(visible, indent=2)}\n\n"
+        "Give a manager-actionable narrative and prioritised risk callouts."
+    )
+    data = reason_or_delegate("ascent-manager-insights", SYSTEM_PROMPT, user, max_tokens=400)
+    if not data:
+        return None
+    out: dict = {}
+    if data.get("narrative"):
+        out["narrative"] = str(data["narrative"])[:600]
+    risks = data.get("risks")
+    if isinstance(risks, list):
+        out["risks"] = [str(r)[:200] for r in risks[:5]]
+    return out or None

@@ -10,7 +10,7 @@ from .auth import authenticate, create_token
 from .models import LoginRequest, TokenResponse
 from .routes_employee import router as emp_router
 from .routes_manager import router as mgr_router
-from .agent_client import AGENT_TARGET
+from .routes_agents import router as agents_router
 
 app = FastAPI(title="ASCENT BFF", version="0.1.0")
 
@@ -24,6 +24,7 @@ app.add_middleware(
 
 app.include_router(emp_router)
 app.include_router(mgr_router)
+app.include_router(agents_router)
 
 
 @app.post("/api/auth/login", response_model=TokenResponse)

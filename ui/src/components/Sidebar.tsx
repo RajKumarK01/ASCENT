@@ -6,8 +6,8 @@ export function Sidebar({ mode }: { mode: string }) {
   const isEmp = user?.role === 'employee'
 
   const links = isEmp
-    ? [{ to: '/', label: 'Dashboard', icon: '🏠' }, { to: '/plan', label: 'Study Plan', icon: '📅' }, { to: '/assessment', label: 'Assessment', icon: '✅' }]
-    : [{ to: '/manager', label: 'Team Overview', icon: '📊' }]
+    ? [{ to: '/', label: 'Dashboard', icon: '🏠' }, { to: '/plan', label: 'Study Plan', icon: '📅' }, { to: '/assessment', label: 'Assessment', icon: '✅' }, { to: '/agents', label: 'Agent Console', icon: '🤖' }]
+    : [{ to: '/manager', label: 'Team Overview', icon: '📊' }, { to: '/agents', label: 'Agent Console', icon: '🤖' }]
 
   return (
     <aside className="w-56 shrink-0 bg-github-surface border-r border-github-border flex flex-col h-screen sticky top-0">

@@ -118,18 +118,23 @@ function ModuleCard({
             )}
           </div>
 
-          {/* Resources */}
+          {/* Resources — real Microsoft Learn deep links when available, else search fallback */}
           <div>
-            <div className="text-xs font-semibold text-github-muted uppercase tracking-wide mb-2">Resources</div>
+            <div className="text-xs font-semibold text-github-muted uppercase tracking-wide mb-2">
+              Resources {module.resources?.length > 0 && <span className="text-github-green normal-case">· live Microsoft Learn links</span>}
+            </div>
             <div className="grid gap-2 sm:grid-cols-3">
-              {[
-                { label: 'Microsoft Learn', url: `https://learn.microsoft.com/search/?terms=${encodeURIComponent(module.skill || module.title)}` },
-                { label: 'Official Docs', url: `https://learn.microsoft.com/search/?terms=${encodeURIComponent(module.title)}+documentation` },
-                { label: 'Practice Lab', url: `https://learn.microsoft.com/search/?terms=${encodeURIComponent(module.title)}+lab+hands-on` },
-              ].map(r => (
-                <a key={r.label} href={r.url} target="_blank" rel="noopener noreferrer"
+              {(module.resources?.length > 0
+                ? (module.resources as { label: string; url: string }[])
+                : [
+                    { label: 'Microsoft Learn', url: `https://learn.microsoft.com/search/?terms=${encodeURIComponent(module.skill || module.title)}` },
+                    { label: 'Official Docs', url: `https://learn.microsoft.com/search/?terms=${encodeURIComponent(module.title)}+documentation` },
+                    { label: 'Practice Lab', url: `https://learn.microsoft.com/search/?terms=${encodeURIComponent(module.title)}+lab+hands-on` },
+                  ]
+              ).map(r => (
+                <a key={r.url} href={r.url} target="_blank" rel="noopener noreferrer"
                    className="rounded-xl border border-github-border bg-github-bg px-3 py-2 text-xs text-github-text hover:border-github-blue/50 hover:bg-github-border/20 transition">
-                  <div className="font-semibold">{r.label}</div>
+                  <div className="font-semibold line-clamp-2">{r.label}</div>
                   <div className="text-github-muted mt-0.5">Open ↗</div>
                 </a>
               ))}
@@ -151,6 +156,8 @@ export function StudyPlan() {
   const { data, loading, error, weeks, setWeeks, refresh } = usePlan()
   const [completing, setCompleting] = useState<string | null>(null)
   const [activeWeeks, setActiveWeeks] = useState(weeks)
+  const [scheduling, setScheduling] = useState(false)
+  const [calMsg, setCalMsg] = useState<string | null>(null)
 
   const handleWeeks = useCallback((w: number) => {
     setActiveWeeks(w)
@@ -164,6 +171,34 @@ export function StudyPlan() {
       await refresh()
     } finally {
       setCompleting(null)
+    }
+  }
+
+  async function handleSchedule() {
+    setScheduling(true)
+    setCalMsg(null)
+    try {
+      const res = await api.scheduleCalendar(activeWeeks)
+      if (res.mode === 'graph') {
+        setCalMsg(res.failed
+          ? `Created ${res.created} event(s); ${res.failed} failed on ${res.target_user}.`
+          : `✅ Added ${res.created} study + assessment events to ${res.target_user} (marked Busy).`)
+      } else if (res.mode === 'ics' && res.ics) {
+        const blob = new Blob([res.ics], { type: 'text/calendar' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = res.filename || 'ascent-study-plan.ics'
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+        URL.revokeObjectURL(url)
+        setCalMsg(`📥 Downloaded a ${res.events.length}-event calendar (.ics) — open it to import into Outlook.`)
+      }
+    } catch (e: any) {
+      setCalMsg(`❌ ${e?.message ?? 'Could not schedule the calendar.'}`)
+    } finally {
+      setScheduling(false)
     }
   }
 
@@ -245,16 +280,6 @@ export function StudyPlan() {
             )}
           </Card>
 
-          {/* Agent-recommended video hero card */}
-          {data?.recommended_video?.video_id && (
-            <Card title="🤖 Agent-recommended video">
-              <p className="mb-3 text-xs text-github-muted">
-                The Curator agent searched YouTube and selected this video based on your certification goal and skill level.
-              </p>
-              <YouTubeCard video={data.recommended_video} skill={certification} certification={certification} />
-            </Card>
-          )}
-
           {/* Module progress bar */}
           {profile && (
             <Card title="Module progress">
@@ -283,6 +308,20 @@ export function StudyPlan() {
           {/* Milestones table */}
           {plan.milestones?.length > 0 && (
             <Card title="Weekly milestones">
+              {/* Schedule to Outlook (cross-tenant) — blocks the calendar with Busy events */}
+              <div className="mb-3 flex flex-col gap-2 rounded-xl border border-github-blue/30 bg-github-blue/5 px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="text-xs text-github-muted">
+                  Schedule these study blocks &amp; assessments on your Outlook calendar (marked <span className="text-github-text font-medium">Busy</span>),
+                  anchored to your most active day{plan.preferred_day ? <> (<span className="text-github-text">{plan.preferred_day}</span>)</> : null}.
+                </div>
+                <button type="button" onClick={handleSchedule} disabled={scheduling}
+                  className="shrink-0 rounded-2xl bg-github-blue px-4 py-2 text-sm font-semibold text-github-bg hover:bg-github-blue/80 disabled:opacity-50">
+                  {scheduling ? 'Scheduling…' : '📅 Add study plan to Outlook'}
+                </button>
+              </div>
+              {calMsg && (
+                <div className="mb-3 rounded-xl border border-github-border bg-github-bg px-3 py-2 text-xs text-github-text">{calMsg}</div>
+              )}
               {plan.focus_skills?.length > 0 && (
                 <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-purple-500/30 bg-purple-500/10 px-3 py-2 text-xs text-purple-300">
                   <span className="font-semibold">🧠 Self-reflection priority:</span>
@@ -296,6 +335,8 @@ export function StudyPlan() {
                   <tr className="text-left text-github-muted text-xs uppercase border-b border-github-border">
                     <th className="pb-2 pr-4">Week</th>
                     <th className="pb-2 pr-4">Skill</th>
+                    <th className="pb-2 pr-4">Objective &amp; checkpoint</th>
+                    <th className="pb-2 pr-4">Scheduled</th>
                     <th className="pb-2 pr-4">Hours</th>
                     <th className="pb-2">Priority</th>
                   </tr>
@@ -303,13 +344,21 @@ export function StudyPlan() {
                 <tbody>
                   {plan.milestones.map((m: any, i: number) => (
                     <tr key={i} className={`border-b border-github-border/30 hover:bg-github-border/20 ${m.is_focus ? 'bg-purple-500/5' : ''}`}>
-                      <td className="py-2 pr-4 font-medium text-github-text">{m.week}</td>
-                      <td className="py-2 pr-4 text-github-text">
+                      <td className="py-2 pr-4 font-medium text-github-text align-top">{m.week}</td>
+                      <td className="py-2 pr-4 text-github-text align-top">
                         {m.focus_skill}
                         {m.is_focus && <span className="ml-2 text-xs text-purple-400">★ focus</span>}
                       </td>
-                      <td className="py-2 pr-4 text-github-muted">{m.target_hours}h</td>
-                      <td className="py-2">
+                      <td className="py-2 pr-4 text-github-muted align-top max-w-md">
+                        {m.objective && <div className="text-github-text">{m.objective}</div>}
+                        {m.checkpoint && <div className="text-xs mt-0.5">✓ {m.checkpoint}</div>}
+                      </td>
+                      <td className="py-2 pr-4 text-github-muted align-top whitespace-nowrap text-xs">
+                        {m.study_date && <div>📘 {m.study_date}</div>}
+                        {m.assessment_date && <div className="mt-0.5">📝 {m.assessment_date}</div>}
+                      </td>
+                      <td className="py-2 pr-4 text-github-muted align-top">{m.target_hours}h</td>
+                      <td className="py-2 align-top">
                         <Badge label={m.is_gap ? 'Gap' : 'Reinforce'} variant={m.is_gap ? 'red' : 'slate'} />
                       </td>
                     </tr>

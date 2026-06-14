@@ -9,6 +9,7 @@ import { EmployeeDashboard } from './pages/EmployeeDashboard'
 import { StudyPlan } from './pages/StudyPlan'
 import { Assessment } from './pages/Assessment'
 import { ManagerDashboard } from './pages/ManagerDashboard'
+import { AgentConsole } from './pages/AgentConsole'
 import { api } from './api'
 
 function Shell() {
@@ -62,6 +63,7 @@ function Shell() {
           ) : (
             <Route path="/manager" element={<ManagerDashboard />} />
           )}
+          <Route path="/agents" element={<AgentConsole />} />
           <Route path="*" element={<Navigate to={user.role === 'manager' ? '/manager' : '/'} replace />} />
         </Routes>
       </main>

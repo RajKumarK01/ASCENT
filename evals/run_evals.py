@@ -83,14 +83,45 @@ def main() -> None:
                 res = run_for_learner(c["learner_id"])
                 if any("[planner]" in t for t in res.get("trace", [])):
                     rai_pass += 1
+            elif check == "trace_has_specialists":
+                res = run_for_learner(c["learner_id"])
+                trace = res.get("trace", [])
+                tags = ["[role:curator]", "[role:engagement]",
+                        "[role:study_planner]", "[role:assessment]"]
+                if all(any(tag in t for t in trace) for tag in tags):
+                    rai_pass += 1
         except Exception:
             pass
     _check("rai", rai_pass, len(CASES["rai"]))
 
-    total_pass = g_pass + r_pass + s_pass + rt_pass + sg_pass + rai_pass
+    # Path dynamism: chosen cert drives curator + assessment; weeks change the breakdown.
+    pd_pass = 0
+    for c in CASES.get("path_dynamism", []):
+        try:
+            if c["check"] == "cert_propagates":
+                res = run_for_learner(c["learner_id"], cert_override=c["cert_override"])
+                cert_ok = res.get("curator", {}).get("certification") == c["expect_cert"]
+                cert_skills = set(fabric_iq.cert_info(c["expect_cert"]).skills)
+                q_skills = {q.get("skill") for q in res.get("assessment", {}).get("questions", [])}
+                skills_ok = len(q_skills) > 0 and q_skills.issubset(cert_skills)
+                if cert_ok and skills_ok:
+                    pd_pass += 1
+            elif c["check"] == "weeks_vary":
+                r4 = run_for_learner(c["learner_id"], weeks=4)
+                r8 = run_for_learner(c["learner_id"], weeks=8)
+                m4 = max((m["week"] for m in r4["study_plan"]["milestones"]), default=0)
+                m8 = max((m["week"] for m in r8["study_plan"]["milestones"]), default=0)
+                if m4 != m8:
+                    pd_pass += 1
+        except Exception:
+            pass
+    _check("path_dynamism", pd_pass, len(CASES["path_dynamism"]))
+
+    total_pass = g_pass + r_pass + s_pass + rt_pass + sg_pass + rai_pass + pd_pass
     total_all  = (len(CASES["grounding"]) + len(CASES["readiness"]) +
                   len(CASES["scheduling"]) + len(CASES["routing"]) +
-                  len(CASES["skill_gap"]) + len(CASES["rai"]))
+                  len(CASES["skill_gap"]) + len(CASES["rai"]) +
+                  len(CASES["path_dynamism"]))
     print(f"\n{'TOTAL':<16} {total_pass}/{total_all}  ({round(100*total_pass/total_all)}%)")
     print("\nDone. Extend testcases.json as you add behaviour (see CLAUDE.md).")
 

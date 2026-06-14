@@ -13,15 +13,60 @@ FOUNDRY mode: specialists call GPT-4.1 via AIProjectClient; concurrent via Threa
 from __future__ import annotations
 import json
 import math
+import os
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError, as_completed
 
 from .agents import curator, study_planner, engagement, assessment, manager_insights
 from .iq import fabric_iq, work_iq
-from .config import learners, MODE
+from .config import learners, MODE, MODEL_DEPLOYMENT
 
 MAX_LOOPS = 2
+
+# When "foundry", the orchestrator also delegates to the independently-deployed
+# Foundry specialist agents (agent-to-agent) and records their reasoning in the
+# trace. Default keeps everything in-process for the fast, reliable UI path.
+# NB: must not start with AGENT_/FOUNDRY_ — those prefixes are reserved by the
+# Foundry hosted-agent platform and rejected at deploy time.
+AGENT_DELEGATION = os.environ.get("ASCENT_DELEGATION", "local").lower()
+
+
+def _maybe_delegate(agent_name: str, prompt: str, trace: list[str]) -> None:
+    """When delegation is on, invoke the independent Foundry agent and trace it."""
+    if AGENT_DELEGATION != "foundry":
+        return
+    try:
+        from .agents._delegate import delegate
+        text = delegate(agent_name, prompt)
+    except Exception:
+        text = None
+    if text:
+        trace.append(f"[delegate:{agent_name}] {text[:200]}")
+
+
+def _youtube_candidates(skills: list[str], level: str = "intermediate") -> dict[str, list[dict]]:
+    """Fetch live YouTube candidates per skill (study_planner curates the picks).
+
+    Uses the existing live tool, which falls back to a curated map. Best-effort:
+    any failure yields an empty candidate set for that skill.
+    """
+    out: dict[str, list[dict]] = {}
+    if MODE != "foundry":
+        return out
+    try:
+        from .agents.tools import _youtube_search
+    except Exception:
+        return out
+    for skill in skills[:3]:
+        try:
+            data = json.loads(_youtube_search(skill, level, max_results=3))
+            vids = data.get("videos", [])
+            if vids:
+                out[skill] = vids
+        except Exception:
+            continue
+    return out
 
 
 def find_learner(learner_id: str) -> dict | None:
@@ -48,7 +93,9 @@ def _validate_learner_id(learner_id: str) -> str | None:
     return None
 
 
-def run_for_learner(learner_id: str, weeks: int = 4) -> dict:
+def run_for_learner(learner_id: str, weeks: int = 4,
+                    cert_override: str | None = None,
+                    score_override: float | None = None) -> dict:
     # RAI: input guardrail — reject non-synthetic IDs before doing any work
     validation_error = _validate_learner_id(learner_id)
     if validation_error:
@@ -65,38 +112,58 @@ def run_for_learner(learner_id: str, weeks: int = 4) -> dict:
         }
 
     role = learner["role"]
-    cert_id = learner["certification"]
+    native_cert = learner["certification"]
+    # Single source of truth: the learner's CHOSEN certification (from their profile)
+    # drives curator → study plan → assessment. Fall back to the dataset cert only when
+    # no valid override is supplied. Mastery data is only meaningful for the native cert.
+    if cert_override and fabric_iq.cert_info(cert_override):
+        cert_id = cert_override
+    else:
+        cert_id = native_cert
+    # Readiness is driven by the learner's ACTUAL taken-assessment score when supplied
+    # (score_override), otherwise the synthetic dataset baseline.
+    practice_score = score_override if score_override is not None else learner["practice_score_avg"]
     route = plan_route({})
 
     # ── Planner–Executor ────────────────────────────────────────────────────
     trace: list[str] = [
         f"[planner] route decided: {' -> '.join(route)} for {learner_id} ({role} -> {cert_id})"
     ]
+    if AGENT_DELEGATION == "foundry":
+        from .agents._delegate import delegate
+        _probe = delegate("ascent-engagement", "Reply with the single word OK.")
+        trace.append(f"[delegate-probe] {(_probe or 'None')[:220]}")
 
     # ── Concurrent: curator + engagement run in parallel ────────────────────
-    mastered = learner.get("mastered_skills", [])
+    # Mastery only applies to the learner's native cert; a switched path starts fresh.
+    mastered = learner.get("mastered_skills", []) if cert_id == native_cert else []
     t0 = time.monotonic()
     with ThreadPoolExecutor(max_workers=2) as pool:
         fut_curator    = pool.submit(curator.run, role, cert_id, mastered)
         fut_engagement = pool.submit(engagement.run, learner_id)
         try:
             cur = fut_curator.result(timeout=30)
-        except FuturesTimeoutError:
+        except (FuturesTimeoutError, Exception):
+            # Any curator failure (timeout, model/search access, etc.) degrades to
+            # a minimal result rather than failing the whole agent.
             cur = {
                 "agent": "curator", "role": role, "certification": cert_id,
-                "skills": [], "mastered_skills": mastered or [],
-                "recommended_hours": None, "prerequisites": [],
-                "content_summary": "Content unavailable (curator timed out).",
+                "skills": (fabric_iq.cert_info(cert_id).skills if fabric_iq.cert_info(cert_id) else []),
+                "mastered_skills": mastered or [],
+                "recommended_hours": (fabric_iq.cert_info(cert_id).recommended_hours
+                                      if fabric_iq.cert_info(cert_id) else None),
+                "prerequisites": [],
+                "content_summary": "Content unavailable (curator degraded).",
                 "citations": [], "microsoft_learn_modules": [],
-                "is_grounded": False, "grounding_sources": [],
+                "is_grounded": False, "grounding_sources": [], "recommended_video": None,
             }
         try:
             eng = fut_engagement.result(timeout=30)
-        except FuturesTimeoutError:
+        except (FuturesTimeoutError, Exception):
             eng = {
                 "agent": "engagement", "learner_id": learner_id,
                 "window": None, "reminder_policy": "default policy",
-                "note": "Engagement agent timed out; using default cadence.",
+                "note": "Engagement agent degraded; using default cadence.",
             }
     elapsed = round(time.monotonic() - t0, 2)
 
@@ -111,36 +178,69 @@ def run_for_learner(learner_id: str, weeks: int = 4) -> dict:
         summary = tc.get("result_summary", "")
         trace.append(f"[tool:{tool_name}] {summary}")
 
-    yt = cur.get("recommended_video")
     trace.append(
         f"[role:curator] cert={cert_id} skills={cur['skills']} "
         f"rec_hours={cur['recommended_hours']}"
-        + (f" | yt='{yt['title'][:50]}'" if yt else "")
     )
+    _maybe_delegate("ascent-curator",
+                    f"Summarise the official learning path and key skills for {cert_id} "
+                    f"for a {role}. Cite Microsoft Learn.", trace)
 
     window = eng.get("window") or {}
     trace.append(
         f"[role:engagement] cadence={window.get('cadence','default')} | "
         f"{eng.get('reminder_policy', 'default policy')}"
     )
+    if window.get("rationale"):
+        trace.append(f"[reason:engagement] {str(window['rationale'])[:160]}")
+    if window.get("_via"):
+        trace.append(f"[delegate:{window['_via']}] engagement reasoned by the Foundry sub-agent (agent-to-agent)")
+
+    # ── YouTube candidates for the Study Plan agent to curate (gaps first) ───
+    mastered_set = set(cur.get("mastered_skills", []))
+    gap_skills_all = [s for s in cur.get("skills", []) if s not in mastered_set]
+    n_mastered = len(mastered_set)
+    level = "advanced" if n_mastered >= 6 else ("intermediate" if n_mastered >= 2 else "beginner")
+    video_candidates = _youtube_candidates(gap_skills_all or cur.get("skills", []), level)
+    for skill, vids in video_candidates.items():
+        trace.append(f"[tool:youtube_search] {len(vids)} candidate(s) for '{skill}'")
 
     # ── Sequential: study_planner depends on curator + engagement ───────────
-    plan = study_planner.run(cur, window, weeks=weeks)
+    plan = study_planner.run(cur, window, weeks=weeks, video_candidates=video_candidates)
+    rec_vid = plan.get("recommended_video")
     trace.append(
         f"[role:study_planner] {plan['total_recommended_hours']}h over "
         f"{plan['weeks']} weeks | milestones={len(plan['milestones'])}"
+        + (f" | video='{rec_vid['title'][:50]}'" if rec_vid else "")
     )
+    if plan.get("rationale"):
+        trace.append(f"[reason:study_planner] {str(plan['rationale'])[:160]}")
+    if plan.get("_via"):
+        trace.append(f"[delegate:{plan['_via']}] study plan reasoned by the Foundry sub-agent (agent-to-agent)")
 
     # ── Critic/Verifier + Self-reflection loop ───────────────────────────────
     loops = 0
-    asmt = assessment.run(
-        cert_id, cur["skills"],
-        learner["practice_score_avg"], learner["hours_studied"]
-    )
+    try:
+        asmt = assessment.run(
+            cert_id, cur["skills"],
+            practice_score, learner["hours_studied"]
+        )
+    except Exception:
+        # Assessment degraded — readiness is deterministic (Fabric IQ), so still gate.
+        readiness = fabric_iq.readiness(
+            practice_score, learner["hours_studied"], cert_id
+        )
+        asmt = {
+            "agent": "assessment", "certification": cert_id, "questions": [],
+            "all_questions_cited": False, "readiness": readiness,
+            "passed": readiness["ready"],
+        }
     trace.append(
         f"[role:assessment] all_cited={asmt['all_questions_cited']} "
         f"readiness={asmt['readiness']}"
     )
+    _maybe_delegate("ascent-assessment",
+                    f"Write one cited practice MCQ for {cert_id} testing a core skill.", trace)
 
     while not asmt["passed"] and loops < MAX_LOOPS:
         loops += 1
@@ -159,7 +259,10 @@ def run_for_learner(learner_id: str, weeks: int = 4) -> dict:
         extra_hours = reflection["extra_hours"]
         extra_weeks = max(1, math.ceil(extra_hours / max(plan["hours_per_week"], 1)))
         new_weeks = weeks + extra_weeks
-        plan = study_planner.run(cur, window, weeks=new_weeks, focus_skills=priority_skills)
+        focus_candidates = _youtube_candidates(priority_skills, level)
+        plan = study_planner.run(cur, window, weeks=new_weeks,
+                                 focus_skills=priority_skills,
+                                 video_candidates=focus_candidates)
 
         trace.append(
             f"[reflect] priority_skills={priority_skills} | "
@@ -170,7 +273,7 @@ def run_for_learner(learner_id: str, weeks: int = 4) -> dict:
         # Realistic score improvement: focused gap-skill practice closes ~50% of score gap per loop.
         score_improvement = round(score_gap * 0.5 * loops)
         hours_improvement = plan["hours_per_week"] * extra_weeks
-        new_score = min(100, learner["practice_score_avg"] + score_improvement)
+        new_score = min(100, practice_score + score_improvement)
         new_hours = learner["hours_studied"] + hours_improvement
 
         # Re-assess readiness only (skip question generation in loop — fast path)
@@ -200,7 +303,7 @@ def run_for_learner(learner_id: str, weeks: int = 4) -> dict:
         "curator": cur,
         "engagement": eng,
         "study_plan": plan,
-        "recommended_video": cur.get("recommended_video"),
+        "recommended_video": plan.get("recommended_video"),
         "assessment": asmt,
         "passed": asmt["passed"],
         "next_step": next_step,

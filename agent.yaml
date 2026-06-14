@@ -1,28 +1,28 @@
-# Foundry Hosted Agent manifest — used by `azd ai agent` extension.
-# Azure resources are provisioned by infra/main.bicep via `azd provision`.
-# After deploy: azd ai agent show  (verify status = Active)
-name: ascent-agent
+# Foundry Hosted Agent manifest (reference for the `azd ai agent` path).
+# Primary deploy path in this repo is the SDK script scripts/deploy_hosted_agent.py,
+# which is the source of truth for env vars (including the secret search key).
+name: ascent-orchestrator
 description: ASCENT multi-agent enterprise learning system (synthetic demo data only).
 
 container_protocol_versions:
   - responses
 
 resources:
-  cpu: "0.5"
-  memory: "1Gi"
+  cpu: "1"
+  memory: "2Gi"
 
 environment_variables:
   - name: ASCENT_MODE
     value: foundry
   - name: AZURE_AI_MODEL_DEPLOYMENT
-    value: gpt-4o
-  - name: AZURE_SEARCH_KNOWLEDGE_BASE
-    value: ascent-kb
-  # Foundry runtime auto-injects at startup:
-  # APPLICATIONINSIGHTS_CONNECTION_STRING
-  # AZURE_AI_PROJECT_ENDPOINT
-  # Use connection references for secrets (set up connections in the hub first):
+    value: gpt-4.1
   - name: AZURE_SEARCH_ENDPOINT
-    value: ${{connections.search-connection.target}}
-  - name: AZURE_OPENAI_ENDPOINT
-    value: ${{connections.aoai-connection.target}}
+    value: https://ascent-search.search.windows.net
+  - name: AZURE_SEARCH_KNOWLEDGE_BASE
+    value: ascentrag-1781081454381
+  # The Foundry runtime auto-injects at startup:
+  #   FOUNDRY_PROJECT_ENDPOINT  (config.py falls back to this)
+  #   APPLICATIONINSIGHTS_CONNECTION_STRING
+  # Secret — do NOT hardcode here. Provide via a Key Vault connection (azd path)
+  # or via the SDK deploy script's environment_variables (demo path):
+  #   AZURE_SEARCH_API_KEY

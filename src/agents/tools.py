@@ -147,44 +147,77 @@ def _ms_learn_fetch(url: str) -> str:
     return json.dumps({"url": url, "content": text})
 
 
+# Curated synthetic-safe fallback so the planner always has a candidate to reason
+# over (no YouTube key, API quota error, or in the hosted agent). IDs reuse the
+# repo's existing curated set; unmatched skills fall back to the AZ-204 full course.
+_GENERIC_VIDEO = {"video_id": "jZx8PMQjobk",
+                  "title": "Azure Developer (AZ-204) — Full Course", "channel": "freeCodeCamp.org"}
+_CURATED_VIDEOS: dict[str, dict] = {
+    "api":      {"video_id": "9HFB3UG5CQ4", "title": "Azure API Management Tutorial", "channel": "Microsoft Azure"},
+    "function": {"video_id": "Vxf-rOEO1q4", "title": "Azure Functions Full Tutorial", "channel": "Microsoft Azure"},
+    "storage":  {"video_id": "UzTtastcBsk", "title": "Azure Storage Overview", "channel": "Microsoft Azure"},
+}
+
+
+def _curated_videos(query: str, max_results: int = 3) -> list[dict]:
+    q = query.lower()
+    hits = [v for key, v in _CURATED_VIDEOS.items() if key in q] or [_GENERIC_VIDEO]
+    out = []
+    for v in hits[:max_results]:
+        vid = v["video_id"]
+        out.append({
+            "video_id": vid, "title": v["title"], "channel": v["channel"],
+            "description": "Curated tutorial (offline fallback).",
+            "thumbnail_url": f"https://img.youtube.com/vi/{vid}/hqdefault.jpg",
+            "url": f"https://www.youtube.com/watch?v={vid}",
+        })
+    return out
+
+
 def _youtube_search(query: str, skill_level: str, max_results: int = 3) -> str:
     api_key = os.environ.get("YOUTUBE_API_KEY", "")
-    if not api_key:
-        return json.dumps({"error": "YOUTUBE_API_KEY not set.", "videos": []})
-
     level_hints = {
         "beginner": "introduction overview getting started",
         "intermediate": "tutorial hands-on deep dive",
         "advanced": "advanced patterns best practices architecture",
     }
     enriched = f"{query} {level_hints.get(skill_level, '')} Azure Microsoft"
-    encoded = urllib.parse.quote(enriched)
-    url = (
-        f"https://www.googleapis.com/youtube/v3/search"
-        f"?part=snippet&q={encoded}&type=video"
-        f"&maxResults={min(max_results, 5)}&key={api_key}"
-    )
-    req = urllib.request.Request(url, headers={"Accept": "application/json"})
-    with urllib.request.urlopen(req, timeout=8) as resp:
-        data = json.loads(resp.read().decode())
 
-    videos = []
-    for item in data.get("items", []):
-        vid_id = item["id"].get("videoId", "")
-        snippet = item.get("snippet", {})
-        if vid_id:
-            videos.append({
-                "video_id": vid_id,
-                "title": snippet.get("title", ""),
-                "channel": snippet.get("channelTitle", ""),
-                "description": (snippet.get("description") or "")[:150],
-                "thumbnail_url": (
-                    snippet.get("thumbnails", {}).get("high", {}).get("url")
-                    or f"https://img.youtube.com/vi/{vid_id}/hqdefault.jpg"
-                ),
-                "url": f"https://www.youtube.com/watch?v={vid_id}",
-            })
-    return json.dumps({"videos": videos, "query_used": enriched})
+    if api_key:
+        try:
+            encoded = urllib.parse.quote(enriched)
+            url = (
+                f"https://www.googleapis.com/youtube/v3/search"
+                f"?part=snippet&q={encoded}&type=video"
+                f"&maxResults={min(max_results, 5)}&key={api_key}"
+            )
+            req = urllib.request.Request(url, headers={"Accept": "application/json"})
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                data = json.loads(resp.read().decode())
+            videos = []
+            for item in data.get("items", []):
+                vid_id = item["id"].get("videoId", "")
+                snippet = item.get("snippet", {})
+                if vid_id:
+                    videos.append({
+                        "video_id": vid_id,
+                        "title": snippet.get("title", ""),
+                        "channel": snippet.get("channelTitle", ""),
+                        "description": (snippet.get("description") or "")[:150],
+                        "thumbnail_url": (
+                            snippet.get("thumbnails", {}).get("high", {}).get("url")
+                            or f"https://img.youtube.com/vi/{vid_id}/hqdefault.jpg"
+                        ),
+                        "url": f"https://www.youtube.com/watch?v={vid_id}",
+                    })
+            if videos:
+                return json.dumps({"videos": videos, "query_used": enriched})
+        except Exception:
+            pass  # fall through to curated
+
+    # No key, quota error, or empty result → curated fallback.
+    return json.dumps({"videos": _curated_videos(query, max_results),
+                       "query_used": enriched, "source": "curated"})
 
 
 # ── Tool-use loop ─────────────────────────────────────────────────────────────

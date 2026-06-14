@@ -97,17 +97,22 @@ def _retrieve_foundry(query: str, k: int) -> GroundedResult:
             answer="I don't know — knowledge base not configured.", citations=[]
         )
 
-    if SEARCH_API_KEY:
-        from azure.core.credentials import AzureKeyCredential
-        credential = AzureKeyCredential(SEARCH_API_KEY)
-    else:
-        credential = DefaultAzureCredential()
-    client = SearchClient(
-        endpoint=SEARCH_ENDPOINT,
-        index_name=KNOWLEDGE_BASE,
-        credential=credential,
-    )
-    results = list(client.search(search_text=query, top=k))
+    try:
+        if SEARCH_API_KEY:
+            from azure.core.credentials import AzureKeyCredential
+            credential = AzureKeyCredential(SEARCH_API_KEY)
+        else:
+            credential = DefaultAzureCredential()
+        client = SearchClient(
+            endpoint=SEARCH_ENDPOINT,
+            index_name=KNOWLEDGE_BASE,
+            credential=credential,
+        )
+        results = list(client.search(search_text=query, top=k))
+    except Exception:
+        # Search unreachable, index missing, or identity lacks access — degrade
+        # gracefully to local doc grounding rather than failing the whole agent.
+        return _retrieve_local(query, k)
     citations: list[Citation] = []
     for r in results:
         # RAG wizard index uses: chunk (text), title (filename), parent_id (b64 blob URL)

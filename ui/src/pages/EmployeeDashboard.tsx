@@ -1,11 +1,10 @@
 import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { api } from '../api'
 import { usePlan } from '../context/PlanContext'
 import { Card } from '../components/Card'
-import { Badge } from '../components/Badge'
-import { ChatPanel } from '../components/ChatPanel'
-import { ContributionHeatmap, type ContributionData } from '../components/ContributionHeatmap'
-import { CertificationPathModal } from '../components/CertificationPathModal'
+import { ContributionHeatmap, type ContributionData, type ScheduledMap } from '../components/ContributionHeatmap'
+import { PathSetupModal } from '../components/PathSetupModal'
 import { LoadingScreen } from '../components/LoadingScreen'
 
 function formatDate(date: Date) {
@@ -52,53 +51,29 @@ export function EmployeeDashboard() {
   const { data, contributions, loading, error: err, refresh: loadDashboard } = usePlan()
   const contribLoading = false
   const [showPathModal, setShowPathModal] = useState(false)
-  const [selectedPath, setSelectedPath] = useState(data?.profile?.selected_path ?? 'recommended')
-  const [selectedCertification, setSelectedCertification] = useState(data?.profile?.active_certification ?? '')
-  const [pathLoading, setPathLoading] = useState(false)
-  const [deleteConfirm, setDeleteConfirm] = useState(false)
 
   async function handlePathConfirm(path: string, certification: string) {
-    setPathLoading(true)
-    try {
-      await api.updateProfile({ path, certification })
-      await loadDashboard()
-      setShowPathModal(false)
-    } finally {
-      setPathLoading(false)
-    }
-  }
-
-  async function handlePathUpdate(path: string) {
-    if (pathLoading) return
-    const cert = selectedCertification || data?.profile?.active_certification || ''
-    await handlePathConfirm(path, cert)
-  }
-
-  function handleDeletePath() {
-    setDeleteConfirm(true)
-  }
-
-  function confirmDeletePath() {
-    setDeleteConfirm(false)
-    setShowPathModal(true)
+    await api.updateProfile({ path, certification })
+    await loadDashboard()
+    setShowPathModal(false)
   }
 
   const profile = data?.profile ?? {}
   const r = data?.assessment?.readiness ?? {}
-  const scorePct = Math.min(100, r.pass_threshold ? (r.pass_threshold - (r.score_gap ?? 0)) / r.pass_threshold * 100 : 0)
-  const assessmentScore = r.pass_threshold ? Math.max(0, Math.min(100, Math.round(((r.pass_threshold - (r.score_gap ?? 0)) / r.pass_threshold) * 100))) : 0
+
+  // Readiness & assessment score are REAL — driven by the assessment the learner takes.
+  const asmt = profile.assessment ?? { taken: false, score_pct: 0, attempts: 0, date: null }
+  const assessmentTaken = !!asmt.taken
+  const readinessPct = r.pass_threshold
+    ? Math.max(0, Math.min(100, Math.round(((r.pass_threshold - (r.score_gap ?? 0)) / r.pass_threshold) * 100)))
+    : 0
+
   const completedModules = profile.progress?.completed ?? 0
   const totalModules = profile.progress?.total ?? 0
   const studyProgress = totalModules ? Math.round((completedModules / totalModules) * 100) : 0
-  const attemptCount = 1 + (data?.loops ?? 0)
-  const lastAssessmentDate = data?.assessment?.last_assessment_date ?? formatDate(new Date())
+  const lastAssessmentDate = asmt.date ?? '—'
   const currentChain = profile.certification_chain ?? []
   const activeCertification = profile.active_certification ?? profile.path_title
-  const pathOptions = profile.path_options ?? []
-  const recommendedOption = pathOptions.find((option: any) => option.key === 'recommended')
-  const customOption = pathOptions.find((option: any) => option.key === 'custom')
-  const activeOption = pathOptions.find((option: any) => option.key === selectedPath) ?? recommendedOption ?? customOption
-  const selectOptions = activeOption?.certifications ?? []
   const { currentStreak, longestStreak, activeDays } = useMemo(() => calculateStreaks(contributions), [contributions])
 
   const totalActivities = useMemo(() => Object.values(contributions).reduce((sum, value) => sum + value, 0), [contributions])
@@ -111,7 +86,19 @@ export function EmployeeDashboard() {
       return diffDays >= 0 && diffDays < 30 ? sum + value : sum
     }, 0)
   }, [contributions])
-  const readinessImpact = Math.max(0, Math.round(scorePct / 8))
+  const readinessImpact = assessmentTaken ? Math.max(0, Math.round(readinessPct / 8)) : 0
+
+  // Upcoming study/assessment sessions to overlay on the heatmap's future side.
+  const scheduled = useMemo<ScheduledMap>(() => {
+    const m: ScheduledMap = {}
+    const evs: any[] = data?.study_plan?.schedule ?? []
+    for (const ev of evs) {
+      if (!ev?.date) continue
+      if (m[ev.date] !== 'study') m[ev.date] = ev.type === 'assessment' ? 'assessment' : 'study'
+    }
+    return m
+  }, [data])
+  const upcomingCount = Object.keys(scheduled).length
 
   if (loading && !data) {
     return <LoadingScreen />
@@ -131,24 +118,15 @@ export function EmployeeDashboard() {
 
   return (
     <div className="relative mx-auto max-w-7xl p-6">
-      {showPathModal && (
-        <CertificationPathModal profile={profile} onSubmit={handlePathConfirm} />
+      {showPathModal && profile && (
+        <PathSetupModal
+          profile={profile}
+          onConfirm={handlePathConfirm}
+          onDismiss={() => setShowPathModal(false)}
+        />
       )}
 
-      {deleteConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0d1117]/90 p-6">
-          <div className="w-full max-w-lg rounded-3xl border border-[#30363d] bg-[#161b22] p-6 shadow-2xl">
-            <div className="text-xl font-semibold text-github-text">Delete learning path</div>
-            <p className="mt-3 text-sm text-github-muted">Are you sure you want to remove your current roadmap? This will let you choose a fresh path again.</p>
-            <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
-              <button type="button" onClick={() => setDeleteConfirm(false)} className="rounded-2xl border border-github-border px-4 py-3 text-sm text-github-text hover:bg-github-border/20">Cancel</button>
-              <button type="button" onClick={confirmDeletePath} className="rounded-2xl bg-github-red px-4 py-3 text-sm font-semibold text-white hover:bg-github-red/90">Delete Path</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
+      <div className="space-y-6">
         <main className="min-w-0 space-y-6">
           <div className="grid gap-6 md:grid-cols-[minmax(0,2fr)_minmax(200px,1fr)]">
             <div className="space-y-2">
@@ -172,17 +150,40 @@ export function EmployeeDashboard() {
             </div>
           </div>
 
+          {/* Take-assessment call to action — shown until the learner takes their assessment */}
+          {!assessmentTaken && (
+            <div className="flex flex-col gap-3 rounded-2xl border border-github-blue/40 bg-github-blue/10 p-5 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="text-base font-semibold text-github-text">📝 Take your assessment</div>
+                <p className="mt-1 text-sm text-github-muted">
+                  Your readiness and assessment score are calculated from a real practice assessment for <span className="font-medium text-github-text">{activeCertification}</span>. Take it now to unlock them.
+                </p>
+              </div>
+              <Link to="/assessment" className="shrink-0 rounded-xl bg-github-blue px-5 py-2.5 text-sm font-semibold text-[#0d1117] hover:bg-github-blue/80">
+                Start assessment →
+              </Link>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
             <Card className="flex h-full flex-col">
               <div className="text-sm text-github-muted">Readiness score</div>
-              <div className="mt-3 text-3xl font-semibold text-github-text">{Math.round(scorePct)}%</div>
-              <div className="mt-auto pt-3 text-xs text-github-muted">Based on practice and study recommendations.</div>
+              <div className="mt-3 text-3xl font-semibold text-github-text">{assessmentTaken ? `${readinessPct}%` : '—'}</div>
+              <div className="mt-auto pt-3 text-xs text-github-muted">
+                {assessmentTaken ? 'Based on your latest assessment and study hours.' : 'Take your assessment to calculate readiness.'}
+              </div>
             </Card>
             <Card className="flex h-full flex-col">
               <div className="text-sm text-github-muted">Assessment score</div>
-              <div className="mt-3 text-3xl font-semibold text-github-text">{assessmentScore}%</div>
-              <div className="mt-auto pt-3 text-xs text-github-muted">Last assessment: {lastAssessmentDate}</div>
-              <div className="text-xs text-github-muted">Attempts: {attemptCount}</div>
+              <div className="mt-3 text-3xl font-semibold text-github-text">{assessmentTaken ? `${asmt.score_pct}%` : '—'}</div>
+              {assessmentTaken ? (
+                <div className="mt-auto pt-3 text-xs text-github-muted">
+                  <div>Last assessment: {lastAssessmentDate}</div>
+                  <div>Attempts: {asmt.attempts}</div>
+                </div>
+              ) : (
+                <Link to="/assessment" className="mt-auto pt-3 text-xs font-medium text-github-blue hover:underline">Take assessment →</Link>
+              )}
             </Card>
             <Card className="flex h-full flex-col">
               <div className="text-sm text-github-muted">Study progress</div>
@@ -214,9 +215,12 @@ export function EmployeeDashboard() {
                     <div className="text-sm text-github-muted">GitHub-style heatmap</div>
                     <div className="mt-1 text-lg font-semibold text-github-text">Track your learning contributions</div>
                   </div>
-                  <div className="text-sm text-github-muted">{contributionsLast30} contributions in the last 30 days</div>
+                  <div className="text-sm text-github-muted">
+                    {contributionsLast30} contributions in the last 30 days
+                    {upcomingCount > 0 && <span className="ml-2 text-github-blue">· {upcomingCount} sessions scheduled ahead</span>}
+                  </div>
                 </div>
-                <ContributionHeatmap data={contributions} loading={contribLoading} />
+                <ContributionHeatmap data={contributions} loading={contribLoading} scheduled={scheduled} />
               </div>
 
               <div className="flex h-full flex-col justify-between rounded-2xl border border-[#30363d] bg-[#0d1117]/40 p-6">
@@ -246,71 +250,7 @@ export function EmployeeDashboard() {
               </div>
             </div>
           </Card>
-
-          <Card title="Learning path type">
-            <div className="flex flex-wrap gap-2">
-              {['recommended', 'custom'].map(option => {
-                const active = selectedPath === option
-                return (
-                  <button key={option} type="button" onClick={() => {
-                    setSelectedPath(option)
-                    const optionData = pathOptions.find((item: any) => item.key === option)
-                    setSelectedCertification(optionData?.certifications?.[0] ?? '')
-                  }}
-                    className={`rounded-full px-4 py-1.5 text-sm font-semibold transition ${active ? 'border border-github-blue bg-github-blue text-[#0d1117]' : 'border border-[#30363d] text-github-text hover:border-github-blue/60 hover:bg-[#30363d]/40'}`}>
-                    {option === 'recommended' ? 'Recommended' : 'Custom'}
-                  </button>
-                )
-              })}
-            </div>
-            {activeOption && (
-              <div className="mt-4 rounded-xl border border-[#30363d] bg-[#0d1117] p-4">
-                <div className="text-sm text-github-muted">{activeOption.title}</div>
-                <div className="mt-1 text-base font-semibold text-github-text">{activeOption.description}</div>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {activeOption.certifications.map((cert: string) => (
-                    <Badge key={cert} label={cert} variant="blue" />
-                  ))}
-                </div>
-                {selectedPath === 'custom' && selectOptions.length > 1 && (
-                  <div className="mt-3">
-                    <label className="text-sm text-github-muted">Choose certification</label>
-                    <select value={selectedCertification} onChange={e => setSelectedCertification(e.target.value)} className="mt-1 w-full rounded-xl border border-[#30363d] bg-[#161b22] px-4 py-2 text-sm text-github-text focus:outline-none focus:ring-2 focus:ring-github-blue">
-                      {selectOptions.map((cert: string) => <option key={cert} value={cert}>{cert}</option>)}
-                    </select>
-                  </div>
-                )}
-              </div>
-            )}
-            <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <button type="button" onClick={() => handlePathUpdate(selectedPath)} disabled={pathLoading} className="rounded-xl bg-github-blue px-4 py-2 text-sm font-semibold text-[#0d1117] hover:bg-github-blue/80 disabled:opacity-50">
-                Apply path selection
-              </button>
-              <button type="button" onClick={handleDeletePath} className="rounded-xl border border-[#30363d] px-4 py-2 text-sm text-github-text hover:bg-[#30363d]/30">
-                Delete Path
-              </button>
-            </div>
-          </Card>
-
-          <Card title="Path summary">
-            <div className="grid gap-3 md:grid-cols-2">
-              {currentChain.map((cert: string, idx: number) => {
-                const status = cert === activeCertification ? 'Current' : idx < currentChain.indexOf(activeCertification) ? 'Complete' : 'Upcoming'
-                return (
-                  <div key={cert} className="rounded-xl border border-[#30363d] bg-[#0d1117] p-4">
-                    <div className="text-sm text-github-muted">{status}</div>
-                    <div className="mt-1 text-base font-semibold text-github-text">{cert}</div>
-                    <div className="mt-1 text-xs text-github-muted">Readiness: {status === 'Current' ? Math.round(scorePct) : 0}%</div>
-                  </div>
-                )
-              })}
-            </div>
-          </Card>
         </main>
-
-        <aside className="mx-auto min-w-0 w-full max-w-[380px] lg:mx-0">
-          <ChatPanel />
-        </aside>
       </div>
     </div>
   )

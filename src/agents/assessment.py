@@ -116,8 +116,47 @@ def _local_mcq(cert_id: str, skill: str, citations: list) -> dict | None:
     return None
 
 
-def _ms_learn_question(cert_id: str, skill: str) -> dict | None:
-    """Fetch a MS Learn snippet for this skill and build a grounded MCQ."""
+def _sibling_distractors(skill: str, skills: list[str], n: int = 3) -> list[str]:
+    """Plausible-but-wrong options drawn from OTHER skills of the SAME cert.
+
+    This keeps distractors on-topic for the chosen certification (e.g. SC-200
+    distractors stay security-flavoured) instead of generic Azure-dev answers.
+    """
+    others = [s for s in skills if s and s != skill]
+    random.shuffle(others)
+    picks = [f"It is primarily addressed through {s}" for s in others[:n]]
+    while len(picks) < n:
+        picks.append("It is a general practice not specific to this certification")
+    return picks
+
+
+def _concept_mcq(cert_id: str, skill: str, skills: list[str], citations: list,
+                 source: str = "generated", context_title: str | None = None) -> dict:
+    """On-topic, skill-scoped MCQ for any skill (used when no authored template
+    exists). Distractors reference sibling skills so the question stays relevant
+    to the chosen certification."""
+    correct = f"Demonstrating {skill} as defined in the {cert_id} exam objectives"
+    choices = [correct] + _sibling_distractors(skill, skills)
+    random.shuffle(choices)
+    correct_index = choices.index(correct)
+    grounding = f" (see Microsoft Learn: {context_title})" if context_title else ""
+    return {
+        "skill": skill,
+        "question": (f"For the {cert_id} certification, which option best reflects "
+                     f"mastery of the '{skill}' skill area{grounding}?"),
+        "choices": choices,
+        "correct_index": correct_index,
+        "hint": f"Focus on what '{skill}' specifically covers within {cert_id}.",
+        "explanation": (f"'{skill}' is a distinct {cert_id} skill area; the other options "
+                        f"map to different skills in the same certification."),
+        "citations": citations,
+        "source": source,
+    }
+
+
+def _ms_learn_question(cert_id: str, skill: str, skills: list[str]) -> dict | None:
+    """Fetch a real MS Learn deep link for this skill and build a grounded,
+    on-topic MCQ (distractors stay within the cert's own skills)."""
     try:
         query = urllib.parse.quote(f"{cert_id} {skill} exam question")
         url = (f"https://learn.microsoft.com/api/search"
@@ -132,24 +171,11 @@ def _ms_learn_question(cert_id: str, skill: str) -> dict | None:
         r = results[0]
         src_url = r.get("url", "")
         title = r.get("title", skill)
-        description = (r.get("description") or "")[:300]
-        if not description:
+        if not src_url:
             return None
-        return {
-            "skill": skill,
-            "question": f"Based on Microsoft Learn documentation for {cert_id}, {description[:120]}. Which of the following is correct?",
-            "choices": [
-                f"The approach described in '{title}' is the recommended pattern.",
-                f"This scenario is handled by Azure Logic Apps instead.",
-                f"This feature requires an additional Azure AD Premium licence.",
-                f"This capability is only available in the Premium tier.",
-            ],
-            "correct_index": 0,
-            "hint": f"See: {title}",
-            "explanation": f"Microsoft Learn — {title} — describes this as the recommended approach for {cert_id}.",
-            "citations": [src_url],
-            "source": "microsoft_learn",
-        }
+        q = _concept_mcq(cert_id, skill, skills, [src_url],
+                         source="microsoft_learn", context_title=title)
+        return q
     except Exception:
         return None
 
@@ -167,13 +193,19 @@ def generate_questions(cert_id: str, skills: list[str], n: int = 10) -> list[dic
             break
         grounded = foundry_iq.retrieve(f"{cert_id} {skill}")
 
+        grounded_citations = [c.source for c in grounded.citations] if grounded.is_grounded else []
         if grounded.is_grounded and MODE == "foundry" and llm_used < _MAX_LLM_QUESTIONS:
             result = _llm_question(cert_id, skill, grounded)
             llm_used += 1
         elif grounded.is_grounded:
-            result = _local_mcq(cert_id, skill, [c.source for c in grounded.citations])
+            result = _local_mcq(cert_id, skill, grounded_citations)
         else:
             result = _local_mcq(cert_id, skill, [])
+
+        # Never drop a skill: if there is no authored template, generate an on-topic
+        # skill-scoped question so the assessment always matches the chosen path.
+        if result is None:
+            result = _concept_mcq(cert_id, skill, skills, grounded_citations)
 
         if result:
             if isinstance(result, str):
@@ -192,11 +224,11 @@ def generate_questions(cert_id: str, skills: list[str], n: int = 10) -> list[dic
         for skill in skills_for_ml:
             if len(questions) >= n:
                 break
-            q = _ms_learn_question(cert_id, skill)
+            q = _ms_learn_question(cert_id, skill, skills)
             if q:
                 questions.append(q)
 
-    # Phase 3 — Fill any remaining with local templates for uncovered skills
+    # Phase 3 — Fill any remaining uncovered skills with an on-topic generated MCQ
     remaining = n - len(questions)
     if remaining > 0:
         covered = {q.get("skill") for q in questions}
@@ -204,9 +236,8 @@ def generate_questions(cert_id: str, skills: list[str], n: int = 10) -> list[dic
             if len(questions) >= n:
                 break
             if skill not in covered:
-                q = _local_mcq(cert_id, skill, [])
-                if q:
-                    questions.append(q)
+                questions.append(_local_mcq(cert_id, skill, [])
+                                 or _concept_mcq(cert_id, skill, skills, []))
 
     return questions[:n]
 

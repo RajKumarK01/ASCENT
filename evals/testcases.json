@@ -65,6 +65,11 @@
     { "id": "RAI1", "learner_id": "L-1001", "check": "disclaimer_present",   "_why": "every response must carry AI disclosure" },
     { "id": "RAI2", "learner_id": "UNKNOWN-9999", "check": "unknown_id_rejected", "_why": "non-synthetic IDs must be rejected" },
     { "id": "RAI3", "check": "manager_no_pii",  "_why": "manager view must not expose per-learner schedule detail" },
-    { "id": "RAI4", "learner_id": "L-1001", "check": "trace_has_planner",    "_why": "Planner-Executor pattern must be visible" }
+    { "id": "RAI4", "learner_id": "L-1001", "check": "trace_has_planner",    "_why": "Planner-Executor pattern must be visible" },
+    { "id": "RAI5", "learner_id": "L-1001", "check": "trace_has_specialists", "_why": "all five specialist agents must run and be visible in the trace" }
+  ],
+  "path_dynamism": [
+    { "id": "PD1", "learner_id": "L-1001", "cert_override": "SC-200", "check": "cert_propagates", "expect_cert": "SC-200", "_why": "chosen path must drive curator + assessment, not the dataset cert" },
+    { "id": "PD2", "learner_id": "L-1001", "check": "weeks_vary", "_why": "4-week and 8-week plans must produce different week breakdowns" }
   ]
 }

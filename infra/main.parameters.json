@@ -8,11 +8,8 @@
     "location": {
       "value": "${AZURE_LOCATION}"
     },
-    "openAiLocation": {
-      "value": "${AZURE_OPENAI_LOCATION=eastus}"
-    },
-    "principalId": {
-      "value": "${AZURE_PRINCIPAL_ID}"
+    "existingProjectEndpoint": {
+      "value": "${AZURE_AI_PROJECT_ENDPOINT}"
     }
   }
 }

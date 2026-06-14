@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { api } from '../api'
 import { usePlan } from '../context/PlanContext'
 import { Card } from '../components/Card'
 import { Badge } from '../components/Badge'
@@ -6,7 +7,8 @@ import { CitationChip } from '../components/CitationChip'
 import { LoadingScreen } from '../components/LoadingScreen'
 
 export function Assessment() {
-  const { data, loading, error } = usePlan()
+  const { data, loading, error, refresh } = usePlan()
+  const [saving, setSaving] = useState(false)
   const [answers, setAnswers] = useState<Record<number, number>>({})
   const [submitted, setSubmitted] = useState(false)
   const [score, setScore] = useState(0)
@@ -31,12 +33,23 @@ export function Assessment() {
     setAnswers(prev => ({ ...prev, [questionIndex]: choiceIndex }))
   }
 
-  function submitAnswers() {
+  async function submitAnswers() {
     const correct = questions.reduce((count: number, q: any, idx: number) => {
       return count + ((answers[idx] === q.correct_index) ? 1 : 0)
     }, 0)
     setScore(correct)
     setSubmitted(true)
+    // Persist the ACTUAL result so readiness + dashboard scores become real (not static).
+    const pct = questions.length ? Math.round((correct / questions.length) * 100) : 0
+    setSaving(true)
+    try {
+      await api.submitAssessment(pct, correct, questions.length)
+      await refresh()
+    } catch {
+      /* non-fatal: local score still shown */
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -154,7 +167,7 @@ export function Assessment() {
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <button type="button" onClick={submitAnswers} disabled={submitted}
                 className="rounded-2xl bg-github-blue px-5 py-3 text-sm font-semibold text-github-bg transition hover:bg-github-blue/80 disabled:opacity-50">
-                {submitted ? 'Submitted' : 'Submit answers'}
+                {submitted ? (saving ? 'Saving…' : 'Submitted ✓ readiness updated') : 'Submit answers'}
               </button>
               {submitted && (
                 <div className="text-sm text-github-muted">Score: <span className="font-semibold text-github-text">{score}/{questions.length}</span></div>

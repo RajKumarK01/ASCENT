@@ -14,23 +14,21 @@ from ..iq import foundry_iq, fabric_iq
 from ..config import MODE, MODEL_DEPLOYMENT
 
 SYSTEM_PROMPT = """You are the Learning Path Curator for an enterprise certification system.
-You have three tools available:
+You have two tools available:
 1. microsoft_docs_search — find official Microsoft Learn training paths and exam objectives
 2. microsoft_docs_fetch  — fetch full content from a specific Microsoft Learn URL
-3. youtube_search        — find the best tutorial video for a skill and learner level
 
 Your job:
 a) Search Microsoft Learn for the certification's official learning paths.
 b) Optionally fetch one URL for deeper detail.
-c) Search YouTube for ONE recommended tutorial video that fits the learner's skill level.
-d) Write a concise 4-6 sentence learning path summary grounded in the retrieved content.
+c) Write a concise 4-6 sentence learning path summary grounded in the retrieved content.
 
 Rules:
 - Always call microsoft_docs_search at least once.
-- Always call youtube_search exactly once — the LLM must choose the query and skill level.
 - Cite every claim: use the URL or title from retrieved content.
-- Never invent module names, URLs, or video titles.
-- End your response with: CITATIONS: <comma-separated list of URLs used>"""
+- Never invent module names or URLs.
+- End your response with: CITATIONS: <comma-separated list of URLs used>
+(Video recommendations are handled by the Study Plan agent, not you.)"""
 
 _ML_QUERY_SUFFIX = "Microsoft Learn modules hands-on labs exam objectives study path"
 
@@ -47,7 +45,7 @@ def run(role: str, cert_id: str, mastered_skills: list[str] | None = None) -> di
     effective_mastered = mastered_skills or []
 
     if MODE == "foundry":
-        summary, tool_calls, ml_citations, yt_video = _run_with_tools(
+        summary, tool_calls, ml_citations = _run_with_tools(
             role, cert_id, grounded_kb, effective_mastered
         )
         is_grounded = grounded_kb.is_grounded or bool(ml_citations)
@@ -55,8 +53,6 @@ def run(role: str, cert_id: str, mastered_skills: list[str] | None = None) -> di
         grounding_sources = ["Foundry IQ knowledge base"]
         if ml_citations:
             grounding_sources.append("Microsoft Learn (tool)")
-        if yt_video:
-            grounding_sources.append("YouTube (tool)")
     else:
         # LOCAL: direct API fallback, no LLM
         ml_live = _search_microsoft_learn(cert_id)
@@ -65,7 +61,6 @@ def run(role: str, cert_id: str, mastered_skills: list[str] | None = None) -> di
         is_grounded = grounded_kb.is_grounded or bool(ml_citations)
         summary = grounded_kb.answer
         tool_calls = []
-        yt_video = None
         grounding_sources = ["Foundry IQ knowledge base"]
         if ml_citations:
             grounding_sources.append("Microsoft Learn (live)" if ml_live else "Microsoft Learn (curated)")
@@ -84,14 +79,14 @@ def run(role: str, cert_id: str, mastered_skills: list[str] | None = None) -> di
         "is_grounded": is_grounded,
         "grounding_sources": grounding_sources,
         "tool_calls": tool_calls,           # logged in orchestrator trace
-        "recommended_video": yt_video,      # LLM-selected YouTube video
+        # Video recommendation is owned by the Study Plan agent now.
     }
 
 
 def _run_with_tools(role: str, cert_id: str, grounded_kb, mastered_skills: list) -> tuple:
-    """FOUNDRY: run the curator using the LLM tool-use loop.
+    """FOUNDRY: run the curator using the LLM tool-use loop (Microsoft Learn only).
 
-    Returns (summary, tool_calls_log, ml_citations, yt_video).
+    Returns (summary, tool_calls_log, ml_citations).
     """
     try:
         from ._foundry import get_openai_client
@@ -99,8 +94,9 @@ def _run_with_tools(role: str, cert_id: str, grounded_kb, mastered_skills: list)
         from ..iq.foundry_iq import Citation
 
         client = get_openai_client()
+        # Curator uses the Microsoft Learn doc tools only; YouTube belongs to the planner.
+        docs_tools = [t for t in TOOL_SCHEMAS if t["function"]["name"] != "youtube_search"]
 
-        # Infer learner skill level from mastered skills ratio
         all_skills = grounded_kb.citations  # proxy for total skills
         mastered_ratio = len(mastered_skills) / max(len(all_skills), 1)
         skill_level = "advanced" if mastered_ratio > 0.6 else ("intermediate" if mastered_ratio > 0.2 else "beginner")
@@ -113,9 +109,7 @@ def _run_with_tools(role: str, cert_id: str, grounded_kb, mastered_skills: list)
             f"Internal knowledge base excerpt:\n{kb_text}\n\n"
             "Use your tools to:\n"
             "1. Search Microsoft Learn for the official learning path.\n"
-            "2. Search YouTube for the best tutorial video for this certification at "
-            f"  {skill_level} level.\n"
-            "3. Write a 4-6 sentence learning path summary with citations."
+            "2. Write a 4-6 sentence learning path summary with citations."
         )
 
         summary, tool_calls_log = tool_loop(
@@ -125,13 +119,12 @@ def _run_with_tools(role: str, cert_id: str, grounded_kb, mastered_skills: list)
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": user_msg},
             ],
-            tools=TOOL_SCHEMAS,
+            tools=docs_tools,
             max_turns=6,
         )
 
         # Extract MS Learn citations from tool results
         ml_citations: list[Citation] = []
-        yt_video: dict | None = None
         for tc in tool_calls_log:
             if tc["tool"] == "microsoft_docs_search":
                 for r in tc["result"].get("results", []):
@@ -140,17 +133,13 @@ def _run_with_tools(role: str, cert_id: str, grounded_kb, mastered_skills: list)
                             source=r["url"],
                             snippet=f"Microsoft Learn: {r.get('title','')} — {r.get('description','')[:100]}",
                         ))
-            elif tc["tool"] == "youtube_search":
-                vids = tc["result"].get("videos", [])
-                if vids:
-                    yt_video = vids[0]  # LLM chose to search; first result is best match
 
-        return summary, tool_calls_log, ml_citations, yt_video
+        return summary, tool_calls_log, ml_citations
 
     except Exception as exc:
         # Graceful fallback to direct API
         ml = _search_microsoft_learn(cert_id)
-        return grounded_kb.answer, [{"tool": "error", "args": {}, "result_summary": str(exc)}], ml, None
+        return grounded_kb.answer, [{"tool": "error", "args": {}, "result_summary": str(exc)}], ml
 
 
 # ── LOCAL mode helpers (no LLM) ───────────────────────────────────────────────

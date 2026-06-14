@@ -32,7 +32,8 @@
       "2025-05-13": 2,
       "2025-05-12": 0,
       "2026-06-10": 3,
-      "2026-06-11": 3
+      "2026-06-11": 3,
+      "2026-06-13": 4
     },
     "activities": [
       {
@@ -63,6 +64,26 @@
       {
         "date": "2026-06-11",
         "type": "module_completed",
+        "count": 1
+      },
+      {
+        "date": "2026-06-13",
+        "type": "assessment_taken",
+        "count": 1
+      },
+      {
+        "date": "2026-06-13",
+        "type": "module_completed",
+        "count": 1
+      },
+      {
+        "date": "2026-06-13",
+        "type": "assessment_taken",
+        "count": 1
+      },
+      {
+        "date": "2026-06-13",
+        "type": "assessment_passed",
         "count": 1
       }
     ]
@@ -98,9 +119,21 @@
       "2025-05-15": 2,
       "2025-05-14": 3,
       "2025-05-13": 1,
-      "2025-05-12": 3
+      "2025-05-12": 3,
+      "2026-06-13": 2
     },
-    "activities": []
+    "activities": [
+      {
+        "date": "2026-06-13",
+        "type": "assessment_taken",
+        "count": 1
+      },
+      {
+        "date": "2026-06-13",
+        "type": "assessment_passed",
+        "count": 1
+      }
+    ]
   },
   "L-1004": {
     "dates": {
