@@ -1,6 +1,6 @@
 # ASCENT
 
-**Adaptive Skills & Certification ENablement for Teams**
+**Adaptive Skills & Certification Enablement for Teams**
 A multi-agent **enterprise learning system** for the Microsoft Agents League — *Reasoning Agents* track (Battle #2, Challenge A), built on **Microsoft Foundry** + the **Microsoft Agent Framework**.
 
 ![ASCENT demo](docs/media/Demo.gif)
