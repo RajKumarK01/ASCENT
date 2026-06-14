@@ -57,6 +57,8 @@ A learner picks a certification goal (a recommended path or a custom one such as
 
 ## Architecture
 
+![ASCENT architecture](docs/media/Ascent-Architecture.jpeg)
+
 A top-level **Orchestrator** plans and routes to five specialist agents:
 
 | Agent | Role | Foundry-native tools / grounding |
