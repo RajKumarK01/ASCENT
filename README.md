@@ -3,7 +3,9 @@
 **Adaptive Skills & Certification Enablement for Teams**
 A multi-agent **enterprise learning system** for the Microsoft Agents League — *Reasoning Agents* track (Battle #2, Challenge A), built on **Microsoft Foundry** + the **Microsoft Agent Framework**.
 
-![ASCENT demo](docs/media/Demo.gif)
+▶️ **Watch the full demo:** https://youtu.be/Xc2JoPL7j8k
+
+[![ASCENT demo](docs/media/Demo.gif)](https://youtu.be/Xc2JoPL7j8k)
 
 > ⚠️ **All data and documents in this repository are SYNTHETIC and for demonstration only.** No real personal, customer, employee, or proprietary data is used. Identifiers such as `L-1001`, `EMP-001`, and `TEAM-A` are fabricated.
 
