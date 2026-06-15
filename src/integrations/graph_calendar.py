@@ -19,7 +19,7 @@ import os
 GRAPH_BASE = "https://graph.microsoft.com/v1.0"
 GRAPH_SCOPE = "https://graph.microsoft.com/.default"
 
-
+# Configuration function for Graph API settings
 def _cfg() -> dict:
     # Read at call time so .env load order never matters.
     return {
