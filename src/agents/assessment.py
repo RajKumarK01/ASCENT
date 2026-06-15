@@ -12,7 +12,7 @@ import urllib.parse
 
 from ..iq import foundry_iq, fabric_iq
 from ..config import MODE, MODEL_DEPLOYMENT
-
+# Note: the system prompt is designed to elicit a specific JSON structure from the LLM, which is then validated in _llm_question. The prompt emphasizes the need for a correct answer and plausible distractors, and includes instructions on the expected format of the response.
 SYSTEM_PROMPT = """You are the Assessment Agent for an enterprise certification programme.
 Generate one realistic multiple-choice practice exam question testing the given skill.
 Use the provided knowledge base context for accuracy and difficulty.
