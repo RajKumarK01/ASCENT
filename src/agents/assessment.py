@@ -12,6 +12,7 @@ import urllib.parse
 
 from ..iq import foundry_iq, fabric_iq
 from ..config import MODE, MODEL_DEPLOYMENT
+#this is the system promt for assement agent, it instructs the agent to generate a multiple-choice question based on the given skill and knowledge base context. The response should be in JSON format, containing the question, choices, correct answer index, hint, and explanation. The correct answer must be one of the choices, and the wrong answers should be plausible but clearly incorrect.
 
 SYSTEM_PROMPT = """You are the Assessment Agent for an enterprise certification programme.
 Generate one realistic multiple-choice practice exam question testing the given skill.

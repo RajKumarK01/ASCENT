@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from ..iq import foundry_iq, fabric_iq
 from ..config import MODE, MODEL_DEPLOYMENT
-
+# The SYSTEM_PROMPT guides the LLM in the curator role, defining its objectives, tools, and rules for generating a learning path summary with proper citations.
 SYSTEM_PROMPT = """You are the Learning Path Curator for an enterprise certification system.
 You have two tools available:
 1. microsoft_docs_search — find official Microsoft Learn training paths and exam objectives

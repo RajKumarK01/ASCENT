@@ -8,7 +8,7 @@ from collections import defaultdict
 
 from ..iq import fabric_iq, work_iq
 from ..config import learners, MODE
-
+# The SYSTEM_PROMPT instructs the Manager Insights Agent to analyze aggregated, k-anonymized team statistics related to readiness, risk, and capacity. The agent is expected to generate a narrative that provides actionable insights for managers, along with prioritized risk callouts. The response must be in JSON format and should avoid any mention or implication of individual data, focusing solely on aggregate metrics.
 SYSTEM_PROMPT = """You are the Manager Insights Agent.
 You receive already-aggregated, k-anonymised team statistics (no individual data).
 Reason about them and return JSON only:

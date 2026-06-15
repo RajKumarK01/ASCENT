@@ -13,7 +13,7 @@ from __future__ import annotations
 from ..iq import fabric_iq
 from ..config import MODE
 
-
+# The SYSTEM_PROMPT defines the instructions for the Study Plan Generator agent. It specifies that the agent should create a week-by-week study schedule based on a given certification, the learner's work rhythm, and candidate YouTube videos for focus skills. The response must be in JSON format and include a rationale for the pacing strategy, specific objectives and checkpoints for each week, and curated video recommendations without inventing any details.
 SYSTEM_PROMPT = """You are the Study Plan Generator agent.
 You receive a capacity-aware schedule skeleton (skills sequenced by gap and
 prerequisite, with per-week hour targets) plus the learner's work rhythm and a

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from ..iq import work_iq
 from ..config import MODE
-
+# The SYSTEM_PROMPT instructs the Engagement Agent to generate a personalized study cadence, reminder policy, and scheduling guidance based on the learner's synthetic work-context signal. The response must be in JSON format and should avoid suggesting study times during peak work periods or exposing another person's schedule.
 SYSTEM_PROMPT = """You are the Engagement Agent.
 You are given a learner's synthetic work-context signal (meeting load, focus
 hours, preferred learning slot, historical active day, and calendar pressure).
